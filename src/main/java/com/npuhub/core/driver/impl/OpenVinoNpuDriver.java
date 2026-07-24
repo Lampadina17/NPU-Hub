@@ -9,10 +9,13 @@ import org.springframework.stereotype.Component;
 
 import java.util.UUID;
 import java.util.function.Consumer;
+import java.nio.file.Files;
+import java.nio.file.Path;
 
 @Component
 public class OpenVinoNpuDriver implements NpuDriver {
     private static final Logger log = LoggerFactory.getLogger(OpenVinoNpuDriver.class);
+    private static final Path INTEL_RENDER_VENDOR = Path.of("/sys/class/drm/renderD128/device/vendor");
     private boolean modelLoaded = false;
     private String currentModelPath = null;
 
@@ -23,8 +26,7 @@ public class OpenVinoNpuDriver implements NpuDriver {
 
     @Override
     public HardwareInfo probeHardware() {
-        // Intel NPU uses /dev/accel/accel* but NOT on ARM (that's Rockchip)
-        boolean deviceExists = new java.io.File("/dev/dri/renderD128").exists() && System.getProperty("os.arch", "").contains("amd64");
+        boolean deviceExists = isIntelOpenVinoDevicePresent();
         boolean loaded = deviceExists && OpenVinoNativeBridge.isLibraryLoaded();
         boolean avail = loaded && OpenVinoNativeBridge.nativeCheckDeviceAvailable();
         String deviceName = avail ? OpenVinoNativeBridge.nativeGetDeviceName() : "Intel NPU (OpenVINO)";
@@ -48,8 +50,25 @@ public class OpenVinoNpuDriver implements NpuDriver {
 
     @Override
     public boolean isAvailable() {
-        boolean deviceExists = new java.io.File("/dev/dri/renderD128").exists() && System.getProperty("os.arch", "").contains("amd64");
+        boolean deviceExists = isIntelOpenVinoDevicePresent();
         return deviceExists && OpenVinoNativeBridge.isLibraryLoaded() && OpenVinoNativeBridge.nativeCheckDeviceAvailable();
+    }
+
+    private boolean isIntelOpenVinoDevicePresent() {
+        if (!new java.io.File("/dev/dri/renderD128").exists()) {
+            return false;
+        }
+
+        try {
+            if (!Files.isReadable(INTEL_RENDER_VENDOR)) {
+                return false;
+            }
+            String vendorId = Files.readString(INTEL_RENDER_VENDOR).trim().toLowerCase();
+            return "0x8086".equals(vendorId);
+        } catch (Exception error) {
+            log.debug("Unable to inspect DRM vendor for OpenVINO selection: {}", error.getMessage());
+            return false;
+        }
     }
 
     @Override

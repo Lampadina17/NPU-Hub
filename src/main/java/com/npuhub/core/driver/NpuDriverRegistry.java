@@ -15,12 +15,6 @@ import java.util.concurrent.ConcurrentHashMap;
 @Service
 public class NpuDriverRegistry {
     private static final Logger log = LoggerFactory.getLogger(NpuDriverRegistry.class);
-    private static final List<BackendType> AUTO_SELECTION_PRIORITY = List.of(
-            BackendType.ROCKCHIP,
-            BackendType.OPENVINO,
-            BackendType.QUALCOMM,
-            BackendType.RYZENAI
-    );
     private static final List<BackendType> DISPLAY_ORDER = List.of(
             BackendType.OPENVINO,
             BackendType.RYZENAI,
@@ -57,13 +51,57 @@ public class NpuDriverRegistry {
     }
 
     public Optional<BackendType> getRecommendedBackend() {
-        for (BackendType priority : AUTO_SELECTION_PRIORITY) {
+        for (BackendType priority : buildAutoSelectionPriority()) {
             NpuDriver driver = drivers.get(priority);
             if (driver != null && driver.isAvailable()) {
                 return Optional.of(priority);
             }
         }
         return Optional.empty();
+    }
+
+    private List<BackendType> buildAutoSelectionPriority() {
+        String osArch = System.getProperty("os.arch", "").toLowerCase();
+        boolean amd64Like = osArch.contains("amd64") || osArch.contains("x86_64") || osArch.contains("x64");
+        boolean armLike = osArch.contains("aarch64") || osArch.contains("arm64") || osArch.startsWith("arm");
+
+        boolean hasRyzenAiDevice = new java.io.File("/dev/amdxdna").exists();
+        boolean hasRockchipDevice = new java.io.File("/dev/accel/accel0").exists();
+        boolean hasQualcommDevice = new java.io.File("/dev/kgsl-3d0").exists();
+
+        if (hasRyzenAiDevice || amd64Like) {
+            return List.of(
+                    BackendType.RYZENAI,
+                    BackendType.OPENVINO,
+                    BackendType.ROCKCHIP,
+                    BackendType.QUALCOMM
+            );
+        }
+
+        if (hasRockchipDevice || armLike) {
+            return List.of(
+                    BackendType.ROCKCHIP,
+                    BackendType.QUALCOMM,
+                    BackendType.RYZENAI,
+                    BackendType.OPENVINO
+            );
+        }
+
+        if (hasQualcommDevice) {
+            return List.of(
+                    BackendType.QUALCOMM,
+                    BackendType.ROCKCHIP,
+                    BackendType.RYZENAI,
+                    BackendType.OPENVINO
+            );
+        }
+
+        return List.of(
+                BackendType.OPENVINO,
+                BackendType.RYZENAI,
+                BackendType.ROCKCHIP,
+                BackendType.QUALCOMM
+        );
     }
 
     public NpuDriver selectActiveDriver(String preferredBackend) {

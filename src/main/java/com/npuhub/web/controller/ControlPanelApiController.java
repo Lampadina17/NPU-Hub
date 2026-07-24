@@ -244,13 +244,17 @@ public class ControlPanelApiController {
                 || "auto".equalsIgnoreCase(configuredBackend)
                 || !isKnownBackend(configuredBackend);
         String effectiveBackend = automaticSelection
-                ? (!recommendedBackend.isBlank() ? recommendedBackend : BackendType.ROCKCHIP.name())
+                ? recommendedBackend
                 : configuredBackend.toUpperCase();
+        String selectionState = automaticSelection
+                ? (recommendedBackend.isBlank() ? "UNSUPPORTED" : "AUTO")
+                : "MANUAL";
 
         settings.put("configuredBackend", configuredBackend);
         settings.put("recommendedBackend", recommendedBackend);
         settings.put("preferredBackend", effectiveBackend);
         settings.put("backendSelectionMode", automaticSelection ? "AUTO" : "MANUAL");
+        settings.put("selectionState", selectionState);
         settings.put("recommendationAvailable", !recommendedBackend.isBlank());
         return settings;
     }

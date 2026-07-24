@@ -1669,6 +1669,20 @@ select.form-control option {
     color: var(--ink);
 }
 
+.form-control:disabled,
+.form-control.is-unsupported {
+    background: color-mix(in srgb, var(--surface-muted) 82%, #777 18%);
+    color: var(--ink-muted);
+    border-color: var(--line);
+    cursor: not-allowed;
+    opacity: 0.85;
+    box-shadow: none;
+}
+
+select.form-control:disabled option {
+    color: var(--ink-muted);
+}
+
 .policy-toggle {
     display: grid;
     grid-template-columns: auto auto 1fr;
@@ -1772,6 +1786,11 @@ select.form-control option {
 .runtime-card[data-runtime="openvino"] {
     --runtime-accent: #45a7ff;
     --runtime-contrast: #07131d;
+}
+
+.runtime-card[data-runtime="rockchip"] {
+    --runtime-accent: #ff6b1a;
+    --runtime-contrast: #180b04;
 }
 
 .runtime-card[data-runtime="ryzenai"] {
@@ -3090,6 +3109,13 @@ body.view-chat-active .header-title .subtitle {
     --accent-contrast: #ffffff;
 }
 
+.theme-unsupported {
+    --accent: #8b8f96;
+    --accent-strong: #c2c6cc;
+    --accent-pale: #23262b;
+    --accent-contrast: #f5f6f7;
+}
+
 @media (max-width: 1120px) {
     :root {
         --sidebar-width: 230px;
@@ -3751,4 +3777,3 @@ body.view-chat-active .header-title .subtitle {
     flex-direction: column;
     gap: 24px;
 }
-

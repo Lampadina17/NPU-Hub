@@ -13,6 +13,12 @@ endif()
 
 set(BUILD_SHARED_LIBS ON CACHE BOOL "" FORCE)
 set(GGML_BACKEND_DL ON CACHE BOOL "" FORCE)
+# A dynamically loaded CPU backend cannot use host-specific GGML_NATIVE.
+# Build dispatchable CPU variants instead, so the Rocket runtime and its
+# ggml plugin use a compatible CPU backend configuration even when the build
+# directory was previously configured on a different machine.
+set(GGML_NATIVE OFF CACHE BOOL "" FORCE)
+set(GGML_CPU_ALL_VARIANTS ON CACHE BOOL "" FORCE)
 set(GGML_CPU_REPACK OFF CACHE BOOL "" FORCE)
 set(LLAMA_BUILD_TESTS OFF CACHE BOOL "" FORCE)
 set(LLAMA_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)

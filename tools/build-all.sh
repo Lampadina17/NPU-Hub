@@ -3,12 +3,42 @@ set -Eeuo pipefail
 
 npuhub_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)"
 npuhub_jobs="${NPU_HUB_BUILD_JOBS:-2}"
+host_arch="$(uname -m)"
 llama_dir="${LLAMA_DIR:-${npuhub_root}/.rocket-runtime/llama.cpp}"
 rocket_backend_dir="${npuhub_root}/.rocket-runtime/ggml-rocket"
 rocket_userspace_dir="${npuhub_root}/.rocket-runtime/rocket-userspace"
 rocket_build_dir="${npuhub_root}/workers/rocket/build"
 rocket_patch="${npuhub_root}/workers/rocket/patches/llama-rocket-strict.patch"
 native_resource_dir="${npuhub_root}/src/main/resources/native"
+
+build_rocket_runtime=false
+build_openvino_jni=false
+build_qualcomm_jni=false
+build_ryzenai_jni=false
+
+case "${host_arch}" in
+    x86_64|amd64)
+        build_openvino_jni=true
+        build_ryzenai_jni=true
+        ;;
+    aarch64|arm64)
+        build_rocket_runtime=true
+        build_qualcomm_jni=true
+        ;;
+    *)
+        build_rocket_runtime=true
+        build_openvino_jni=true
+        build_qualcomm_jni=true
+        build_ryzenai_jni=true
+        ;;
+esac
+
+if [[ "${NPU_HUB_BUILD_ALL_PLATFORMS:-0}" == "1" ]]; then
+    build_rocket_runtime=true
+    build_openvino_jni=true
+    build_qualcomm_jni=true
+    build_ryzenai_jni=true
+fi
 
 log() {
     printf '[build-all] %s\n' "$*"
@@ -91,60 +121,82 @@ require_command git
 require_command cmake
 require_command java
 
-log "Updating llama.cpp to latest origin/master"
-ensure_checkout "${llama_dir}" "https://github.com/ggml-org/llama.cpp.git" master
-git -C "${llama_dir}" fetch --prune origin master
-git -C "${llama_dir}" rebase --autostash origin/master
-ensure_llama_patch
+if [[ "${build_rocket_runtime}" == true ]]; then
+    log "Updating llama.cpp to latest origin/master"
+    ensure_checkout "${llama_dir}" "https://github.com/ggml-org/llama.cpp.git" master
+    git -C "${llama_dir}" fetch --prune origin master
+    git -C "${llama_dir}" rebase --autostash origin/master
+    ensure_llama_patch
 
-log "Ensuring Rocket backend sources"
-ensure_checkout "${rocket_backend_dir}" "https://github.com/gregordinary/ggml-rocket.git" main
-ensure_checkout "${rocket_userspace_dir}" "https://github.com/gregordinary/rocket-userspace.git" main
+    log "Ensuring Rocket backend sources"
+    ensure_checkout "${rocket_backend_dir}" "https://github.com/gregordinary/ggml-rocket.git" main
+    ensure_checkout "${rocket_userspace_dir}" "https://github.com/gregordinary/rocket-userspace.git" main
 
-log "Building Rocket JNI and latest llama.cpp"
-cmake \
-    -S "${npuhub_root}/workers/rocket" \
-    -B "${rocket_build_dir}" \
-    -DCMAKE_BUILD_TYPE=Release \
-    -DLLAMA_DIR="${llama_dir}" \
-    -DROCKET_BACKEND_LIBRARY="${rocket_backend_dir}/build-dl/libggml-rocket.so"
-cmake --build "${rocket_build_dir}" --parallel "${npuhub_jobs}"
+    log "Building Rocket JNI and latest llama.cpp"
+    cmake \
+        -S "${npuhub_root}/workers/rocket" \
+        -B "${rocket_build_dir}" \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DLLAMA_DIR="${llama_dir}" \
+        -DGGML_NATIVE=OFF \
+        -DGGML_CPU_ALL_VARIANTS=ON \
+        -DROCKET_BACKEND_LIBRARY="${rocket_backend_dir}/build-dl/libggml-rocket.so"
+    cmake --build "${rocket_build_dir}" --parallel "${npuhub_jobs}"
 
-log "Building libggml-rocket.so against the same latest ggml ABI"
-cmake \
-    -S "${rocket_backend_dir}" \
-    -B "${rocket_backend_dir}/build-dl" \
-    -DCMAKE_BUILD_TYPE=Release \
-    -DGGML_ROCKET_DL=ON \
-    -DHOST_DIR="${llama_dir}" \
-    -DGGML_LIB_DIR="${rocket_build_dir}/bin" \
-    -DCMAKE_DISABLE_FIND_PACKAGE_rocketnpu=ON \
-    -DROCKETNPU_DIR="${rocket_userspace_dir}"
-cmake --build "${rocket_backend_dir}/build-dl" --parallel "${npuhub_jobs}"
-cp -L -- "${rocket_backend_dir}/build-dl/libggml-rocket.so" "${rocket_build_dir}/bin/libggml-rocket.so"
+    log "Building libggml-rocket.so against the same latest ggml ABI"
+    cmake \
+        -S "${rocket_backend_dir}" \
+        -B "${rocket_backend_dir}/build-dl" \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DGGML_ROCKET_DL=ON \
+        -DHOST_DIR="${llama_dir}" \
+        -DGGML_LIB_DIR="${rocket_build_dir}/bin" \
+        -DCMAKE_DISABLE_FIND_PACKAGE_rocketnpu=ON \
+        -DROCKETNPU_DIR="${rocket_userspace_dir}"
+    cmake --build "${rocket_backend_dir}/build-dl" --parallel "${npuhub_jobs}"
+    cp -L -- "${rocket_backend_dir}/build-dl/libggml-rocket.so" "${rocket_build_dir}/bin/libggml-rocket.so"
+fi
 
 log "Building generic JNI adapters"
-cmake -S "${npuhub_root}/native" -B "${npuhub_root}/native/build" -DCMAKE_BUILD_TYPE=Release
+cmake \
+    -S "${npuhub_root}/native" \
+    -B "${npuhub_root}/native/build" \
+    -DCMAKE_BUILD_TYPE=Release \
+    -DNPU_HUB_BUILD_OPENVINO_JNI="${build_openvino_jni}" \
+    -DNPU_HUB_BUILD_ROCKCHIP_JNI="${build_rocket_runtime}" \
+    -DNPU_HUB_BUILD_QUALCOMM_JNI="${build_qualcomm_jni}" \
+    -DNPU_HUB_BUILD_RYZENAI_JNI="${build_ryzenai_jni}"
 cmake --build "${npuhub_root}/native/build" --parallel "${npuhub_jobs}"
-# The generic native project contains a compatibility Rockchip stub. Replace
-# it with the real Rocket/llama.cpp JNI runtime so source-tree launches cannot
-# accidentally load the stale stub before the bundled runtime.
-copy_runtime_library \
-    "${rocket_build_dir}/bin/libnpu_rockchip_jni.so" \
-    "${npuhub_root}/native/build/libnpu_rockchip_jni.so"
+
+if [[ "${build_rocket_runtime}" == true ]]; then
+    # The generic native project contains a compatibility Rockchip stub.
+    # Replace it with the real Rocket/llama.cpp JNI runtime so source-tree
+    # launches cannot accidentally load the stale stub before the bundled runtime.
+    copy_runtime_library \
+        "${rocket_build_dir}/bin/libnpu_rockchip_jni.so" \
+        "${npuhub_root}/native/build/libnpu_rockchip_jni.so"
+fi
 
 log "Staging native libraries for the Spring Boot JAR"
 mkdir -p "${native_resource_dir}/rocket"
-copy_runtime_library "${npuhub_root}/native/build/libnpu_openvino_jni.so" "${native_resource_dir}/libnpu_openvino_jni.so"
-copy_runtime_library "${npuhub_root}/native/build/libnpu_qualcomm_jni.so" "${native_resource_dir}/libnpu_qualcomm_jni.so"
-copy_runtime_library "${npuhub_root}/native/build/libnpu_ryzenai_jni.so" "${native_resource_dir}/libnpu_ryzenai_jni.so"
-copy_runtime_library "${rocket_build_dir}/bin/libnpu_rockchip_jni.so" "${native_resource_dir}/libnpu_rockchip_jni.so"
-copy_runtime_library "${rocket_build_dir}/bin/libggml-base.so.0" "${native_resource_dir}/rocket/libggml-base.so.0"
-copy_runtime_library "${rocket_build_dir}/bin/libggml.so.0" "${native_resource_dir}/rocket/libggml.so.0"
-copy_runtime_library "${rocket_build_dir}/bin/libllama.so.0" "${native_resource_dir}/rocket/libllama.so.0"
-copy_runtime_library "${rocket_build_dir}/bin/libggml-cpu.so" "${native_resource_dir}/rocket/libggml-cpu.so"
-copy_runtime_library "${rocket_build_dir}/bin/libggml-rocket.so" "${native_resource_dir}/rocket/libggml-rocket.so"
-copy_runtime_library "${rocket_build_dir}/bin/libnpu_rockchip_jni.so" "${native_resource_dir}/rocket/libnpu_rockchip_jni.so"
+if [[ "${build_openvino_jni}" == true ]]; then
+    copy_runtime_library "${npuhub_root}/native/build/libnpu_openvino_jni.so" "${native_resource_dir}/libnpu_openvino_jni.so"
+fi
+if [[ "${build_qualcomm_jni}" == true ]]; then
+    copy_runtime_library "${npuhub_root}/native/build/libnpu_qualcomm_jni.so" "${native_resource_dir}/libnpu_qualcomm_jni.so"
+fi
+if [[ "${build_ryzenai_jni}" == true ]]; then
+    copy_runtime_library "${npuhub_root}/native/build/libnpu_ryzenai_jni.so" "${native_resource_dir}/libnpu_ryzenai_jni.so"
+fi
+if [[ "${build_rocket_runtime}" == true ]]; then
+    copy_runtime_library "${rocket_build_dir}/bin/libnpu_rockchip_jni.so" "${native_resource_dir}/libnpu_rockchip_jni.so"
+    copy_runtime_library "${rocket_build_dir}/bin/libggml-base.so.0" "${native_resource_dir}/rocket/libggml-base.so.0"
+    copy_runtime_library "${rocket_build_dir}/bin/libggml.so.0" "${native_resource_dir}/rocket/libggml.so.0"
+    copy_runtime_library "${rocket_build_dir}/bin/libllama.so.0" "${native_resource_dir}/rocket/libllama.so.0"
+    copy_runtime_library "${rocket_build_dir}/bin/libggml-cpu.so" "${native_resource_dir}/rocket/libggml-cpu.so"
+    copy_runtime_library "${rocket_build_dir}/bin/libggml-rocket.so" "${native_resource_dir}/rocket/libggml-rocket.so"
+    copy_runtime_library "${rocket_build_dir}/bin/libnpu_rockchip_jni.so" "${native_resource_dir}/rocket/libnpu_rockchip_jni.so"
+fi
 
 resolve_maven
 log "Building and testing the complete Spring Boot application"

@@ -86,6 +86,7 @@ let toastContainer;
 let currentActiveNpu = 'ROCKCHIP';
 let lastLogId = 0;
 let backendSelectionMode = 'AUTO';
+let backendSelectionState = 'AUTO';
 let chatHistory = [];
 let chatAbortController = null;
 let chatLoadedModelName = '';
@@ -94,6 +95,35 @@ let inferenceApiEnabled = false;
 let telemetryRequestInFlight = false;
 
 const BACKEND_PRIORITY = ['ROCKCHIP', 'OPENVINO', 'QUALCOMM', 'RYZENAI'];
+
+function isKnownBackend(backend) {
+    return BACKEND_PRIORITY.includes(String(backend || '').toUpperCase());
+}
+
+function setUnsupportedBackendState(select, unsupported) {
+    if (!select) return;
+
+    Array.from(select.options).forEach(option => {
+        if (option.value === 'UNSUPPORTED') {
+            option.remove();
+        }
+        option.disabled = unsupported;
+    });
+
+    if (unsupported) {
+        const ghostOption = document.createElement('option');
+        ghostOption.value = 'UNSUPPORTED';
+        ghostOption.textContent = 'Unsupported';
+        ghostOption.disabled = true;
+        select.prepend(ghostOption);
+        select.value = 'UNSUPPORTED';
+        select.disabled = true;
+        select.classList.add('is-unsupported');
+    } else {
+        select.disabled = false;
+        select.classList.remove('is-unsupported');
+    }
+}
 
 function applyTheme(backend) {
     const target = (backend || currentActiveNpu || 'ROCKCHIP').toLowerCase();
@@ -888,15 +918,19 @@ async function fetchHardwareAndStatus() {
                     || details.includes('could not initialize')
                     || details.includes('health check failed');
             });
+            const unsupportedPlatform = !engineReady
+                && !runtimeUnavailable
+                && hwList.length > 0
+                && hwList.every(hw => String(hw.statusDetails || '').toLowerCase().includes('not detected'));
             if (activeLabel) {
                 activeLabel.innerText = activeNpu === 'No NPU Online'
-                    ? 'Not detected'
+                    ? (unsupportedPlatform ? 'Unsupported' : 'Not detected')
                     : activeNpu;
             }
             if (engineStateLabel) {
                 engineStateLabel.innerText = engineReady
                     ? 'ONLINE'
-                    : runtimeUnavailable ? 'RUNTIME OFF' : 'NO NPU';
+                    : runtimeUnavailable ? 'RUNTIME OFF' : unsupportedPlatform ? 'UNSUPPORTED' : 'NO NPU';
             }
             if (connectionState) {
                 connectionState.classList.toggle('offline', !engineReady);
@@ -904,9 +938,14 @@ async function fetchHardwareAndStatus() {
 
             if (backendSelectionMode === 'AUTO'
                     && activeNpu !== 'No NPU Online'
+                    && !unsupportedPlatform
                     && activeNpu !== currentActiveNpu) {
                 currentActiveNpu = activeNpu;
                 applyTheme(currentActiveNpu);
+            }
+            if (unsupportedPlatform) {
+                currentActiveNpu = 'Unsupported';
+                applyTheme('Unsupported');
             }
         }
     } catch (err) {
@@ -1260,20 +1299,36 @@ async function loadSettings() {
             const backendSelect = document.getElementById('setting-backend');
             const recommendationHint = document.getElementById('backend-recommendation-hint');
             const availableBackends = Array.from(backendSelect.options, option => option.value);
-            const recommendedBackend = availableBackends.includes(data.recommendedBackend)
+            const selectionState = String(data.selectionState || data.backendSelectionMode || 'AUTO');
+            const unsupported = selectionState === 'UNSUPPORTED';
+            const configuredBackend = isKnownBackend(data.configuredBackend)
+                ? String(data.configuredBackend).toUpperCase()
+                : '';
+            const recommendedBackend = !unsupported && availableBackends.includes(data.recommendedBackend)
                 ? data.recommendedBackend
                 : null;
-            const preferredBackend = availableBackends.includes(data.preferredBackend)
+            const preferredBackend = !unsupported && availableBackends.includes(data.preferredBackend)
                 ? data.preferredBackend
-                : recommendedBackend || availableBackends[0];
+                : configuredBackend || recommendedBackend || availableBackends[0];
 
             backendSelectionMode = data.backendSelectionMode === 'MANUAL' ? 'MANUAL' : 'AUTO';
-            backendSelect.value = preferredBackend;
-            currentActiveNpu = preferredBackend;
-            applyTheme(preferredBackend);
+            backendSelectionState = selectionState;
+            setUnsupportedBackendState(backendSelect, unsupported);
+
+            if (unsupported) {
+                currentActiveNpu = 'Unsupported';
+                backendSelect.value = 'UNSUPPORTED';
+                applyTheme('Unsupported');
+            } else {
+                backendSelect.value = preferredBackend;
+                currentActiveNpu = preferredBackend;
+                applyTheme(preferredBackend);
+            }
 
             if (recommendationHint) {
-                if (recommendedBackend) {
+                if (unsupported) {
+                    recommendationHint.textContent = 'Unsupported on this platform';
+                } else if (recommendedBackend) {
                     const recommendedLabel = backendSelect.querySelector(
                         `option[value="${recommendedBackend}"]`
                     ).textContent;
@@ -1295,8 +1350,9 @@ async function loadSettings() {
 }
 
 async function saveSettings() {
+    const backendSelect = document.getElementById('setting-backend');
     const payload = {
-        preferredBackend: document.getElementById('setting-backend').value,
+        preferredBackend: backendSelectionState === 'UNSUPPORTED' ? 'auto' : backendSelect.value,
         modelsDirectory: document.getElementById('setting-models-dir').value,
         ollamaPort: parseInt(document.getElementById('setting-port').value, 10),
         defaultContextWindow: parseInt(document.getElementById('setting-context').value, 10),
@@ -1310,9 +1366,12 @@ async function saveSettings() {
             body: JSON.stringify(payload)
         });
         if (resp.ok) {
-            backendSelectionMode = 'MANUAL';
+            if (backendSelectionState !== 'UNSUPPORTED') {
+                backendSelectionMode = 'MANUAL';
+                backendSelectionState = 'MANUAL';
+            }
             showToast('Settings saved successfully!', 'success');
-            applyTheme(payload.preferredBackend);
+            applyTheme(backendSelectionState === 'UNSUPPORTED' ? 'Unsupported' : payload.preferredBackend);
             fetchHardwareAndStatus();
             fetchModels();
         } else {
