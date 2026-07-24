@@ -1,14 +1,14 @@
-# Configurazione e operatività
+# Configuration and Operations
 
-## Precedenza
+## Precedence
 
-La configurazione effettiva del server è quella Spring Boot:
+The effective server configuration follows Spring Boot precedence rules:
 
-1. argomenti `--chiave=valore`;
-2. variabili d'ambiente;
+1. `--key=value` arguments;
+2. environment variables;
 3. `src/main/resources/application.yml`.
 
-Esempio:
+Example:
 
 ```bash
 java -jar target/npu-hub-1.0.0-SNAPSHOT.jar \
@@ -16,7 +16,7 @@ java -jar target/npu-hub-1.0.0-SNAPSHOT.jar \
   --npu.models.directory=/srv/npu-hub/models
 ```
 
-Equivalente con variabili:
+Equivalent with variables:
 
 ```bash
 SERVER_PORT=11434 \
@@ -24,30 +24,28 @@ NPU_MODELS_DIRECTORY=/srv/npu-hub/models \
 java -jar target/npu-hub-1.0.0-SNAPSHOT.jar
 ```
 
-Le impostazioni modificate nel pannello passano invece da `SettingsService`:
-sono in memoria, si perdono al riavvio e non fanno rebind delle proprietà
-Spring.
+Settings modified in the control panel pass through `SettingsService`:
+they are stored in memory, are lost on restart, and do not rebind Spring properties.
 
-## Proprietà Spring
+## Spring Properties
 
-| Proprietà | Variabile tipica | Default | Effetto |
+| Property | Typical Environment Variable | Default | Effect |
 | --- | --- | --- | --- |
-| `server.port` | `SERVER_PORT` | `8080` | Porta HTTP |
-| `spring.mvc.async.request-timeout` | `SPRING_MVC_ASYNC_REQUEST_TIMEOUT` | `600000` ms | Timeout MVC async |
-| `npu.models.directory` | `NPU_MODELS_DIRECTORY` | `models` | Root dei modelli |
-| `npu.ollama.aliases-file` | `NPU_OLLAMA_ALIASES_FILE` | `.npuhub/ollama-models.json` | Alias Ollama persistenti |
-| `npu.ollama.compatibility-version` | `NPU_OLLAMA_COMPATIBILITY_VERSION` | `0.20.0-npuhub.17` | Valore di `/api/version` |
-| `npu.ollama.default-context` | `NPU_OLLAMA_DEFAULT_CONTEXT` | `4096` | `num_ctx` quando assente |
-| `npu.ollama.minimum-loaded-context` | `NPU_OLLAMA_MINIMUM_LOADED_CONTEXT` | `4096` | Minimo contesto Rockchip caricato |
-| `npu.ollama.default-max-tokens` | `NPU_OLLAMA_DEFAULT_MAX_TOKENS` | `512` | `num_predict` quando assente |
-| `npu.ollama.default-keep-alive` | `NPU_OLLAMA_DEFAULT_KEEP_ALIVE` | `-1` | Valore analizzato dalla facade |
-| `npu.ollama.keep-alive-scan-ms` | `NPU_OLLAMA_KEEP_ALIVE_SCAN_MS` | `1000` | Frequenza controllo scadenza |
+| `server.port` | `SERVER_PORT` | `8080` | HTTP Port |
+| `spring.mvc.async.request-timeout` | `SPRING_MVC_ASYNC_REQUEST_TIMEOUT` | `600000` ms | Async MVC timeout |
+| `npu.models.directory` | `NPU_MODELS_DIRECTORY` | `models` | Models root directory |
+| `npu.ollama.aliases-file` | `NPU_OLLAMA_ALIASES_FILE` | `.npuhub/ollama-models.json` | Persistent Ollama aliases |
+| `npu.ollama.compatibility-version` | `NPU_OLLAMA_COMPATIBILITY_VERSION` | `0.20.0-npuhub.17` | Value returned by `/api/version` |
+| `npu.ollama.default-context` | `NPU_OLLAMA_DEFAULT_CONTEXT` | `4096` | `num_ctx` when missing |
+| `npu.ollama.minimum-loaded-context` | `NPU_OLLAMA_MINIMUM_LOADED_CONTEXT` | `4096` | Minimum loaded context on Rockchip |
+| `npu.ollama.default-max-tokens` | `NPU_OLLAMA_DEFAULT_MAX_TOKENS` | `512` | `num_predict` when missing |
+| `npu.ollama.default-keep-alive` | `NPU_OLLAMA_DEFAULT_KEEP_ALIVE` | `-1` | Value parsed by facade |
+| `npu.ollama.keep-alive-scan-ms` | `NPU_OLLAMA_KEEP_ALIVE_SCAN_MS` | `1000` | Expiration check frequency |
 
-Nota: il lifecycle esplicito rende oggi `keep_alive` non operativo nel percorso
-Ollama/OpenAI. `OllamaInferenceFacade.finish()` non aggiorna la scadenza e il
-load dal pannello imposta residenza infinita.
+Note: the explicit lifecycle currently renders `keep_alive` non-operational in the
+Ollama/OpenAI flow. `OllamaInferenceFacade.finish()` does not update expiration and panel loading sets infinite residency.
 
-Logging di default:
+Default logging configuration:
 
 ```yaml
 logging:
@@ -56,156 +54,143 @@ logging:
     com.npuhub: WARN
 ```
 
-Per debug:
+For debugging:
 
 ```bash
 java -jar target/npu-hub-1.0.0-SNAPSHOT.jar \
   --logging.level.com.npuhub=DEBUG
 ```
 
-## Impostazioni del pannello
+## Control Panel Settings
 
-`SettingsService` espone:
+`SettingsService` exposes:
 
-| Chiave | Default | Stato corrente |
+| Key | Default | Current Status |
 | --- | --- | --- |
-| `preferredBackend` | `auto` | Usata dal frontend per la selezione e inviata al load |
-| `modelsDirectory` | `models` | Solo UI; non cambia `npu.models.directory` |
-| `ollamaPort` | `8080` | Solo UI; non cambia `server.port` |
-| `maxConcurrentInferences` | `2` | Non collegata al pool di inferenza |
-| `defaultContextWindow` | `4096` | Solo UI; il load control usa ancora 4096 |
+| `preferredBackend` | `auto` | Used by frontend for selection and sent on load |
+| `modelsDirectory` | `models` | UI only; does not change `npu.models.directory` |
+| `ollamaPort` | `8080` | UI only; does not change `server.port` |
+| `maxConcurrentInferences` | `2` | Not connected to inference thread pool |
+| `defaultContextWindow` | `4096` | UI only; load control still uses 4096 |
 
-Per una modifica reale usare proprietà Spring e riavviare il processo. Prima
-di rendere persistenti queste impostazioni, va definita una sorgente unica per
-evitare divergenza tra UI e runtime.
+For real changes, use Spring properties and restart the process. Before making these settings persistent, a single source of truth should be defined to avoid divergence between UI and runtime.
 
-## Variabili di build
+## Build Variables
 
-| Variabile | Default | Usata da |
+| Variable | Default | Used by |
 | --- | --- | --- |
-| `NPU_HUB_BUILD_JOBS` | `2` | Parallelismo di `tools/build-all.sh` |
-| `NPU_HUB_MAVEN_VERSION` | `3.9.9` | Maven locale scaricato dallo script |
-| `LLAMA_DIR` | `.rocket-runtime/llama.cpp` | Checkout `llama.cpp` esterno |
-| `RYZEN_AI_INSTALLATION_PATH` | nessuno | Discovery SDK Ryzen AI |
+| `NPU_HUB_BUILD_JOBS` | `2` | Parallelism of `tools/build-all.sh` |
+| `NPU_HUB_MAVEN_VERSION` | `3.9.9` | Local Maven downloaded by script |
+| `LLAMA_DIR` | `.rocket-runtime/llama.cpp` | External `llama.cpp` checkout |
+| `RYZEN_AI_INSTALLATION_PATH` | none | Ryzen AI SDK discovery |
 
-`tools/build-all.sh` può scaricare Maven, clonare repository e aggiornare
-`llama.cpp`; non è una build offline.
+`tools/build-all.sh` can download Maven, clone repositories, and update `llama.cpp`; it is not an offline build.
 
-## Variabili runtime Rocket
+## Rocket Runtime Variables
 
-| Variabile | Default | Valori / significato |
+| Variable | Default | Values / Meaning |
 | --- | --- | --- |
-| `NPU_HUB_ROCKET_MODE` | `hybrid` | `hybrid` o `strict` |
-| `NPU_HUB_ROCKET_BATCH` | `2048` | `n_batch`, limitato dal contesto |
-| `NPU_HUB_ROCKET_UBATCH` | `512` | `n_ubatch`, limitato da batch |
+| `NPU_HUB_ROCKET_MODE` | `hybrid` | `hybrid` or `strict` |
+| `NPU_HUB_ROCKET_BATCH` | `2048` | `n_batch`, limited by context |
+| `NPU_HUB_ROCKET_UBATCH` | `512` | `n_ubatch`, limited by batch |
 | `NPU_HUB_ROCKET_KV_TYPE` | `q8_0` | `q8_0`, `f16`, `q4_0` |
-| `NPU_HUB_ROCKET_THREADS` | min(CPU, 4) | Thread decode CPU |
-| `NPU_HUB_ROCKET_THREADS_BATCH` | min(CPU, 5) | Thread batch/prefill |
-| `NPU_HUB_ROCKET_PROMPT_CACHE` | abilitata | `0` la disabilita |
-| `NPU_HUB_ROCKET_TRUNCATE_PROMPT` | abilitata | `0` trasforma overflow in errore |
-| `NPU_HUB_GGML_BACKEND_DIR` | auto | Directory dei plugin GGML |
-| `NPU_HUB_ROCKET_PLUGIN` | auto | Path esplicito a `libggml-rocket.so` |
-| `GGML_BACKEND_PATH` | auto | Candidate path compatibile GGML |
-| `ROCKET_STRICT` | disabilitata | Compatibilità; usata se `MODE` manca |
+| `NPU_HUB_ROCKET_THREADS` | min(CPU, 4) | CPU decode threads |
+| `NPU_HUB_ROCKET_THREADS_BATCH` | min(CPU, 5) | Batch/prefill threads |
+| `NPU_HUB_ROCKET_PROMPT_CACHE` | enabled | `0` disables it |
+| `NPU_HUB_ROCKET_TRUNCATE_PROMPT` | enabled | `0` turns overflow into an error |
+| `NPU_HUB_GGML_BACKEND_DIR` | auto | GGML plugin directory |
+| `NPU_HUB_ROCKET_PLUGIN` | auto | Explicit path to `libggml-rocket.so` |
+| `GGML_BACKEND_PATH` | auto | GGML-compatible candidate path |
+| `ROCKET_STRICT` | disabled | Compatibility; used if `MODE` is missing |
 
-Esempio diagnostico strict:
+Strict diagnostic example:
 
 ```bash
 NPU_HUB_ROCKET_MODE=strict \
 java -jar target/npu-hub-1.0.0-SNAPSHOT.jar
 ```
 
-La modalità ibrida è il default intenzionale: prefill grandi e convenienti
-possono usare la NPU, mentre decode breve/token-by-token può usare CPU. Quindi
-“NPU-only” nella selezione Java non significa che ogni operazione GGML venga
-forzata sulla NPU.
+Hybrid mode is the intentional default: large, cost-effective prefills can use the NPU, while short token-by-token decoding can use the CPU. Therefore, "NPU-only" in Java selection does not mean every GGML operation is forced onto the NPU.
 
-Con macchine a memoria limitata, cambiare insieme `num_ctx`, batch e tipo KV
-può aumentare drasticamente RAM e swap. La KV cache ripiega automaticamente su
-`f16` se il tipo quantizzato non è supportato, aumentando il consumo.
+On memory-constrained machines, changing `num_ctx`, batch, and KV type together can drastically increase RAM and swap usage. The KV cache automatically falls back to `f16` if the quantized type is unsupported, increasing consumption.
 
-## Directory e dati
+## Directories and Data
 
-| Path | Persistenza | Contenuto |
+| Path | Persistence | Content |
 | --- | --- | --- |
-| `models/` | Da preservare | Pesi e directory modello |
-| `.npuhub/ollama-models.json` | Da preservare | Alias Ollama |
-| `target/` | Generato | JAR e classi Maven |
-| `native/build/` | Generato | Adapter JNI |
-| `workers/*/build/` | Generato | Runtime worker |
-| `src/main/resources/native/` | Generato/staging | Librerie incluse nel JAR |
-| `.rocket-runtime/llama.cpp` | Riscaricabile | Checkout upstream |
-| `.rocket-runtime/ggml-rocket` | Sorgente esterna locale | Plugin Rocket |
-| `.rocket-runtime/rocket-userspace` | Sorgente esterna locale | Userspace Rocket |
-| `.build-tools/` | Riscaricabile | Maven locale |
-| `/tmp/npuhub-rocket-runtime-*` | Temporaneo | Librerie estratte dal JAR |
+| `models/` | Preserve | Weights and model directories |
+| `.npuhub/ollama-models.json` | Preserve | Ollama aliases |
+| `target/` | Generated | JAR and Maven classes |
+| `native/build/` | Generated | JNI adapters |
+| `workers/*/build/` | Generated | Worker runtimes |
+| `src/main/resources/native/` | Generated/staging | Packaged JAR libraries |
+| `.rocket-runtime/llama.cpp` | Re-downloadable | Upstream checkout |
+| `.rocket-runtime/ggml-rocket` | Local external source | Rocket plugin |
+| `.rocket-runtime/rocket-userspace` | Local external source | Rocket userspace |
+| `.build-tools/` | Re-downloadable | Local Maven |
+| `/tmp/npuhub-rocket-runtime-*` | Temporary | Libraries extracted from JAR |
 
-Usare path assoluti in produzione. Con path relativi, modelli e alias dipendono
-dalla working directory da cui viene lanciato il JAR.
+Use absolute paths in production. With relative paths, models and aliases depend on the working directory from which the JAR is launched.
 
-## Download modelli
+## Model Downloads
 
-`tools/download_model.py` sceglie la sorgente così:
+`tools/download_model.py` selects the source as follows:
 
-- ID `OpenVINO/*` e `unsloth/*`: Hugging Face;
-- altri ID: ModelScope.
+- IDs starting with `OpenVINO/*` and `unsloth/*`: Hugging Face;
+- other IDs: ModelScope.
 
-Per Rockchip filtra i file GGUF in base alla quantizzazione. Ogni download
-scrive prima `<file>.part` e poi fa rename, ma non supporta resume. Non ci sono:
+For Rockchip, it filters GGUF files based on quantization. Each download first writes `<file>.part` and then renames it, but does not support resume. The following are absent:
 
-- checksum;
-- autenticazione per repository privati;
-- retry nel downloader Python;
-- cancellazione;
-- quota disco;
-- validazione del formato oltre a filename e dimensione.
+- checksums;
+- authentication for private repositories;
+- retries in the Python downloader;
+- cancellation;
+- disk quotas;
+- format validation beyond filename and size.
 
-La soglia di 50 MiB evita di considerare validi piccoli pointer LFS, ma non
-garantisce integrità.
+The 50 MiB threshold avoids considering small LFS pointer files valid, but does not guarantee integrity.
 
-## Sicurezza
+## Security
 
-Il server non implementa autenticazione. Inoltre:
+The server does not implement authentication. Additionally:
 
-- `ControlPanelApiController` abilita CORS da qualsiasi origine;
-- gli endpoint di setup possono scaricare, compilare e installare software;
-- l'installer Intel usa `pkexec`, `apt-get`, modifica regole udev e aggiunge
-  l'utente al gruppo `render`;
-- gli endpoint modello possono scaricare e cancellare file;
-- Ollama e OpenAI accettano richieste senza API key;
-- Spring Boot ascolta normalmente su tutte le interfacce.
+- `ControlPanelApiController` enables CORS from any origin;
+- setup endpoints can download, compile, and install software;
+- the Intel installer uses `pkexec`, `apt-get`, modifies udev rules, and adds the user to the `render` group;
+- model endpoints can download and delete files;
+- Ollama and OpenAI accept requests without API keys;
+- Spring Boot normally listens on all network interfaces.
 
-Uso consigliato:
+Recommended usage:
 
-1. bind su loopback o VLAN fidata;
-2. firewall sulla porta;
-3. reverse proxy con autenticazione se esposto;
-4. non esporre gli endpoint `/api/v1/control/setup/*`;
-5. eseguire con un utente senza privilegi non necessari;
-6. separare modelli e sorgenti da dati sensibili.
+1. bind to loopback or a trusted VLAN;
+2. set up a firewall on the port;
+3. use a reverse proxy with authentication if exposed;
+4. do not expose `/api/v1/control/setup/*` endpoints;
+5. run with a user lacking unneeded privileges;
+6. separate models and source code from sensitive data.
 
-Il progetto non deve essere esposto direttamente a Internet nello stato
-attuale.
+The project must not be exposed directly to the Internet in its current state.
 
-## Operazioni e side effect
+## Operations and Side Effects
 
-| Operazione | Effetto |
+| Operation | Effect |
 | --- | --- |
-| Download modello | Rete e scrittura sotto models |
-| Delete modello | Cancellazione ricorsiva o della variante GGUF |
-| Load | Allocazione runtime, modello e KV cache |
-| Unload | Libera stato nativo, non ferma l'API |
-| Start API | Cambia flag process-local |
-| Stop API | Blocca quattro route, non libera il modello |
-| Build worker | Aggiorna/clona sorgenti, applica patch e compila |
-| Setup ModelScope | Esegue `python3 -m pip install modelscope` |
-| Setup Intel | Download, `pkexec`, pacchetti, udev, gruppo utente |
+| Download model | Network activity and writing under models |
+| Delete model | Recursive deletion or deletion of GGUF variant |
+| Load | Runtime allocation, model, and KV cache |
+| Unload | Frees native state, does not stop the API |
+| Start API | Changes process-local flag |
+| Stop API | Blocks four routes, does not free model |
+| Build worker | Updates/clones sources, applies patch, and compiles |
+| Setup ModelScope | Executes `python3 -m pip install modelscope` |
+| Setup Intel | Download, `pkexec`, packages, udev, user group |
 
-Progressi, log e flag si perdono a ogni riavvio.
+Progress, logs, and flags are lost on every restart.
 
-## Diagnostica
+## Diagnostics
 
-Endpoint utili:
+Useful endpoints:
 
 ```text
 GET /api/v1/control/hardware
@@ -215,7 +200,7 @@ GET /api/v1/control/setup/status?taskId=<id>
 GET /api/ps
 ```
 
-Controlli di sistema:
+System checks:
 
 ```bash
 ls -l /dev/accel/accel0 /dev/dri/renderD128 /dev/amdxdna /dev/kgsl-3d0
@@ -223,50 +208,44 @@ ldd path/to/libnpu_backend_jni.so
 file path/to/libnpu_backend_jni.so
 ```
 
-Non tutti i device esistono su tutte le piattaforme; un `No such file` è
-atteso per i backend non presenti.
+Not all devices exist on all platforms; `No such file` is expected for non-present backends.
 
-### Il backend non è disponibile
+### Backend Unavailable
 
-Verificare:
+Check:
 
-1. device node e permessi;
-2. architettura host;
-3. libreria JNI caricata;
-4. dipendenze dinamiche;
-5. probe dello SDK vendor;
-6. log Spring e terminale del pannello.
+1. device node and permissions;
+2. host architecture;
+3. loaded JNI library;
+4. dynamic dependencies;
+5. vendor SDK probe;
+6. Spring logs and control panel terminal.
 
-### La libreria è caricata ma la generazione è simulata
+### Library Loaded but Generation Simulated
 
-Controllare il path della `.so`. Se proviene da `native/build` o dalla risorsa
-generica, può essere uno stub. Per OpenVINO/Ryzen AI deve provenire dalla build
-del relativo `workers/`; per Rockchip dal bundle Rocket.
+Check the path of the `.so`. If it comes from `native/build` or from the generic resource, it may be a stub. For OpenVINO/Ryzen AI it must come from the build of the respective `workers/`; for Rockchip from the Rocket bundle.
 
-### Il modello risulta non scaricato
+### Model Appears Not Downloaded
 
-Verificare:
+Check:
 
-- directory calcolata da `npu.models.directory`;
-- nome repository/folder;
-- variante GGUF richiesta;
-- dimensione totale oltre 50 MiB;
-- eventuali `.part`;
-- permessi di lettura.
+- directory calculated by `npu.models.directory`;
+- repository/folder name;
+- requested GGUF variant;
+- total size over 50 MiB;
+- any `.part` files;
+- read permissions.
 
-### Richiesta `503`
+### `503` Request Error
 
-Caricare un modello e chiamare:
+Load a model and call:
 
 ```bash
 curl -X POST http://localhost:8080/api/v1/control/api/start
 ```
 
-Il flag API riparte sempre disabilitato dopo un restart.
+The API flag always defaults to disabled after a restart.
 
-### Contesto troppo grande
+### Context Window Too Large
 
-Una richiesta non può aumentare il contesto del modello già caricato. Occorre
-scaricarlo e ricaricarlo con un contesto maggiore tramite un percorso che
-esponga `requestedContextWindow`; l'endpoint control attuale usa 4096 fisso.
-Ridurre `num_ctx` o estendere esplicitamente il contratto di load.
+A request cannot increase the context of an already loaded model. You must unload it and reload it with a larger context using a flow that exposes `requestedContextWindow`; the current control endpoint uses a fixed 4096. Reduce `num_ctx` or explicitly extend the load contract.

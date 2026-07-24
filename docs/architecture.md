@@ -1,21 +1,21 @@
-# Architettura
+# Architecture
 
-Questo documento descrive lo stato attuale del codice. Quando una scelta
-architetturale e il comportamento dell'interfaccia divergono, qui viene
-documentato ciò che fa il codice, non ciò che il prodotto vorrebbe fare.
+This document describes the current state of the codebase. When an architectural
+choice and interface behavior diverge, what the code actually does is documented
+here, not what the product intended to do.
 
-## Vista d'insieme
+## Overview
 
 ```mermaid
 flowchart LR
-    UI[Browser / client esterno]
-    WEB[Controller e filtro HTTP]
-    SVC[Servizi applicativi]
+    UI[Browser / external client]
+    WEB[Controllers and HTTP filter]
+    SVC[Application services]
     REG[NpuDriverRegistry]
-    DRV[NpuDriver Java]
-    JNI[Native bridge JNI]
-    RT[Runtime C++ / SDK vendor]
-    NPU[Dispositivo NPU]
+    DRV[Java NpuDriver]
+    JNI[Native JNI bridge]
+    RT[C++ runtime / vendor SDK]
+    NPU[NPU device]
 
     UI --> WEB
     WEB --> SVC
@@ -26,117 +26,109 @@ flowchart LR
     RT --> NPU
 ```
 
-Spring Boot contiene sia il control plane sia il data plane:
+Spring Boot contains both the control plane and the data plane:
 
-- il **control plane** rileva hardware, scarica modelli, carica/scarica il
-  modello, abilita l'API e avvia task di setup;
-- il **data plane** valida richieste Ollama/OpenAI, renderizza il prompt,
-  seleziona il driver e inoltra la generazione al runtime nativo.
+- the **control plane** detects hardware, downloads models, loads/unloads the
+  model, enables the API, and starts setup tasks;
+- the **data plane** validates Ollama/OpenAI requests, renders the prompt,
+  selects the driver, and forwards generation to the native runtime.
 
-Non esiste un processo worker separato. Le librerie native sono caricate nello
-stesso processo JVM e mantengono stato globale C++.
+There is no separate worker process. Native libraries are loaded in the
+same JVM process and maintain global C++ state.
 
-## Componenti Java
+## Java Components
 
-| Componente | Responsabilità | Da non metterci |
+| Component | Responsibility | What NOT to put here |
 | --- | --- | --- |
-| `core/model` | DTO interni immutabili ed enum dei backend | I/O, stato o logica HTTP |
-| `core/driver/NpuDriver` | Contratto comune load/unload/generate/stream | Logica Ollama o gestione catalogo |
-| `NpuDriverRegistry` | Registrazione, probe e selezione fail-closed | Caricamento di librerie o modelli |
-| `core/driver/impl` | Adattamento tra contratto Java e firme JNI | Parsing delle richieste HTTP |
-| `jni` | Firme native e ricerca/caricamento delle `.so` | Politiche di selezione hardware |
-| `ModelManagementService` | Catalogo, path, quantizzazioni e singolo modello attivo | Rendering dei prompt |
-| `OllamaModelService` | Nomi Ollama, alias persistenti, tag/show/digest | Inferenza |
-| `OllamaInferenceFacade` | Validazione opzioni, prompt e stop sequence | Accesso diretto a JNI |
-| `InferenceService` | Chiamata al driver, async streaming e metriche | Stato del modello |
-| `HardwareDiscoveryService` | Probe e metriche Linux/JVM | Mutazioni hardware |
-| `SetupService` | Comandi esterni asincroni di install/build | Richieste di inferenza |
-| `web/controller` | Contratto HTTP e serializzazione | Dettagli degli SDK vendor |
+| `core/model` | Immutable internal DTOs and backend enums | I/O, state, or HTTP logic |
+| `core/driver/NpuDriver` | Common contract for load/unload/generate/stream | Ollama logic or catalog management |
+| `NpuDriverRegistry` | Registration, probing, and fail-closed selection | Loading libraries or models |
+| `core/driver/impl` | Adaptation between Java contract and JNI signatures | Parsing HTTP requests |
+| `jni` | Native signatures and `.so` lookup/loading | Hardware selection policies |
+| `ModelManagementService` | Catalog, paths, quantizations, and single active model | Prompt rendering |
+| `OllamaModelService` | Ollama names, persistent aliases, tag/show/digest | Inference |
+| `OllamaInferenceFacade` | Options validation, prompt, and stop sequences | Direct access to JNI |
+| `InferenceService` | Driver calls, async streaming, and metrics | Model state |
+| `HardwareDiscoveryService` | Linux/JVM probing and metrics | Hardware mutations |
+| `SetupService` | External async commands for install/build | Inference requests |
+| `web/controller` | HTTP contract and serialization | Vendor SDK details |
 
-## Ciclo di vita del modello e dell'API
+## Model and API Lifecycle
 
-Gli stati del modello e dell'API sono indipendenti:
+Model and API states are independent:
 
 ```text
-catalogo ──download──> presente su disco ──load──> caricato nella NPU
-                                                   │
-                                                   └── start API ──> inferenza abilitata
+catalog ──download──> present on disk ──load──> loaded in NPU
+                                                 │
+                                                 └── start API ──> inference enabled
 ```
 
-Regole effettive:
+Actual rules:
 
-- esiste un solo `currentlyLoadedModelId` per processo;
-- un secondo modello non sostituisce automaticamente il primo: il servizio
-  solleva un errore finché il primo non viene scaricato;
-- ricaricare lo stesso file con un contesto richiesto non superiore a quello
-  attuale è un no-op;
-- il modello viene caricato con contesto minimo 4096 su Rockchip e minimo
-  assoluto 512;
-- l'API parte disabilitata a ogni riavvio;
-- `start` richiede un modello caricato;
-- `stop` blocca gli endpoint principali ma non scarica il modello;
-- `unload` scarica il modello ma non forza `enabled=false`;
-- il `keep_alive` ricevuto dalle API viene analizzato, ma la facade lo ignora:
-  la residenza è gestita esplicitamente dal pannello.
+- there is only one `currentlyLoadedModelId` per process;
+- a second model does not automatically replace the first: the service
+  raises an error until the first one is unloaded;
+- reloading the same file with a requested context no greater than the
+  current one is a no-op;
+- the model is loaded with a minimum context of 4096 on Rockchip and an absolute
+  minimum of 512;
+- the API starts disabled on every restart;
+- `start` requires a loaded model;
+- `stop` blocks the main endpoints but does not unload the model;
+- `unload` unloads the model but does not force `enabled=false`;
+- the `keep_alive` received from APIs is parsed, but the facade ignores it:
+  residency is managed explicitly from the control panel.
 
-`InferenceApiGateFilter` restituisce `503` quando l'API è ferma per:
+`InferenceApiGateFilter` returns `503` when the API is stopped for:
 
 - `POST /api/chat`;
 - `POST /api/generate`;
 - `POST /v1/chat/completions`;
 - `POST /v1/completions`.
 
-Altri endpoint, incluso `/v1/responses`, non passano da questo gate specifico.
-Possono comunque fallire se non c'è un modello caricato.
+Other endpoints, including `/v1/responses`, do not pass through this specific gate.
+They can still fail if no model is loaded.
 
-## Selezione del backend
+## Backend Selection
 
-`NpuDriverRegistry` registra tutti i bean `NpuDriver`.
+`NpuDriverRegistry` registers all `NpuDriver` beans.
 
-Con backend esplicito:
+With an explicit backend:
 
-1. confronta nome enum e display name senza distinzione tra maiuscole;
-2. verifica `isAvailable()`;
-3. fallisce se il backend richiesto non è sano.
+1. compares enum name and display name case-insensitively;
+2. verifies `isAvailable()`;
+3. fails if the requested backend is not healthy.
 
-Con `auto`, la priorità è:
+With `auto`, the priority order is:
 
 1. Rockchip;
 2. OpenVINO;
 3. Qualcomm;
 4. Ryzen AI.
 
-Non è previsto fallback CPU/GPU. Se nessun driver è disponibile viene
-sollevata un'eccezione.
+CPU/GPU fallback is not provided. If no driver is available, an exception is raised.
 
-La disponibilità prevista è la combinazione di un device Linux e una libreria
-JNI:
+Expected availability is the combination of a Linux device and a JNI library:
 
-| Backend | Check Java |
+| Backend | Java Check |
 | --- | --- |
-| Rockchip | runtime JNI e (`/dev/accel/accel0` oppure probe nativo) |
-| OpenVINO | architettura `amd64`, `/dev/dri/renderD128`, JNI e probe OpenVINO |
-| Qualcomm | `/dev/kgsl-3d0`, JNI e probe Genie |
-| Ryzen AI | `/dev/amdxdna`, JNI e probe OGA |
+| Rockchip | JNI runtime and (`/dev/accel/accel0` or native probe) |
+| OpenVINO | `amd64` architecture, `/dev/dri/renderD128`, JNI, and OpenVINO probe |
+| Qualcomm | `/dev/kgsl-3d0`, JNI, and Genie probe |
+| Ryzen AI | `/dev/amdxdna`, JNI, and OGA probe |
 
-Questi check non certificano da soli che un modello specifico sia compatibile.
+These checks alone do not certify that a specific model is compatible.
 
-Il probe Rocket corrente non è fail-closed: sia il worker reale sia lo stub
-ritornano sempre `true` da `nativeCheckAccel0Available()`. Se il bundle JNI è
-caricabile, Rockchip può quindi risultare raccomandato anche senza
-`/dev/accel/accel0`. Il load successivo fallirà se il backend Rocket non riesce
-a inizializzare il device. Anche la versione `"1.6.0"` esposta dal worker è un
-placeholder, non una lettura del driver installato.
+The current Rocket probe is not fail-closed: both the real worker and the stub
+always return `true` from `nativeCheckAccel0Available()`. If the JNI bundle can be loaded,
+Rockchip can therefore be recommended even without `/dev/accel/accel0`. Subsequent loading will fail if the Rocket backend cannot initialize the device. The version `"1.6.0"` exposed by the worker is also a placeholder, not a reading from the installed driver.
 
-## Confine JNI e caricamento librerie
+## JNI Boundary and Library Loading
 
-Le firme Java sono in `src/main/java/com/npuhub/jni`. I simboli C++ devono
-corrispondere esattamente al package, alla classe, al nome del metodo e ai
-parametri. Una modifica unilaterale può compilare sia Java sia C++ e fallire
-solo a runtime con `UnsatisfiedLinkError`.
+Java signatures are located in `src/main/java/com/npuhub/jni`. C++ symbols must
+match the package, class, method name, and parameters exactly. A unilateral change can compile in both Java and C++ and only fail at runtime with an `UnsatisfiedLinkError`.
 
-Per Rockchip, `NativeLibraryLoader` tenta prima il bundle coerente contenuto nel
-JAR:
+For Rockchip, `NativeLibraryLoader` first tries the consistent bundle contained in the JAR:
 
 ```text
 /native/rocket/libggml-base.so.0
@@ -147,194 +139,164 @@ JAR:
 /native/rocket/libnpu_rockchip_jni.so
 ```
 
-Il bundle viene estratto in una directory temporanea e le dipendenze principali
-sono caricate in ordine. In assenza del bundle, il loader prova:
+The bundle is extracted to a temporary directory and the main dependencies
+are loaded in order. In the absence of the bundle, the loader tries:
 
 1. `java.library.path`;
 2. `native/build`;
-3. una singola risorsa `/native/<nome-libreria>`.
+3. a single resource `/native/<library-name>`.
 
-Per gli altri backend l'ordine parte direttamente da questi tre tentativi. Di
-conseguenza una libreria di sistema obsoleta può precedere quella nel JAR.
+For other backends, the order starts directly from these three attempts. Consequently, an obsolete system library may take precedence over the one packaged in the JAR.
 
-### Implementazioni reali e stub
+### Real Implementations vs Stubs
 
-`native/` produce quattro librerie semplici. OpenVINO, Qualcomm e Ryzen AI
-restituiscono testo simulato; lo stub Rockchip è inoltre incompatibile con le
-firme di sampling estese e con il callback di log correnti.
+`native/` produces four simple libraries. OpenVINO, Qualcomm, and Ryzen AI
+return simulated text; the Rockchip stub is also incompatible with the current extended sampling signatures and log callback.
 
-Le implementazioni reali sono:
+The real implementations are:
 
 - `workers/rocket/src/rocket_jni.cpp`;
 - `workers/openvino/src/openvino_jni.cpp`;
 - `workers/ryzenai/src/ryzenai_jni.cpp`.
 
-`tools/build-all.sh` sostituisce lo stub Rockchip con il runtime Rocket reale,
-ma impacchetta ancora gli stub generici per gli altri backend. Chi interviene
-sulla build deve preservare questa distinzione o, preferibilmente, introdurre
-profili espliciti che non possano simulare accidentalmente una NPU reale.
+`tools/build-all.sh` replaces the Rockchip stub with the real Rocket runtime,
+but still packages generic stubs for other backends. Anyone modifying the build must preserve this distinction or, preferably, introduce explicit profiles that cannot accidentally simulate a real NPU.
 
-## Runtime Rocket
+## Rocket Runtime
 
-Rocket usa `llama.cpp` e carica dinamicamente i backend GGML CPU e ROCKET.
+Rocket uses `llama.cpp` and dynamically loads the GGML CPU and ROCKET backends.
 
-Caricamento modello:
+Model loading:
 
-1. configura modalità ibrida o strict;
-2. abilita il backend Rocket;
-3. carica il GGUF;
-4. crea il contesto con `n_ctx`, `n_batch`, `n_ubatch` e tipo KV;
-5. se una KV cache quantizzata fallisce, riprova con `f16`.
+1. configures hybrid or strict mode;
+2. enables the Rocket backend;
+3. loads the GGUF file;
+4. creates context with `n_ctx`, `n_batch`, `n_ubatch`, and KV type;
+5. if a quantized KV cache fails, retries with `f16`.
 
-Generazione:
+Generation:
 
-1. tokenizza il prompt con il vocabolario del modello;
-2. compatta head/tail se il prompt non entra nel contesto;
-3. riusa il prefisso KV quando possibile;
-4. esegue il prefill a chunk;
-5. costruisce la sampler chain;
-6. campiona, decodifica e invia i token;
-7. invalida la cache in caso di errore.
+1. tokenizes the prompt using the model's vocabulary;
+2. compacts head/tail if the prompt exceeds the context window;
+3. reuses KV prefix when possible;
+4. performs chunked prefill;
+5. builds the sampler chain;
+6. samples, decodes, and sends tokens;
+7. invalidates cache upon error.
 
-Il codice Java sincronizza `load`, `unload`, `generate` e `generateStream` per
-istanza di driver. Questo serializza le operazioni su ciascun backend, anche se
-lo streaming viene avviato da un executor con quattro thread.
+Java code synchronizes `load`, `unload`, `generate`, and `generateStream` per driver instance. This serializes operations on each backend, even though streaming is started by an executor with four threads.
 
-## Modelli
+## Models
 
-Il catalogo è inizializzato in `ModelManagementService.initCatalogModels()`.
-Contiene metadati e path relativi; non è un database.
+The catalog is initialized in `ModelManagementService.initCatalogModels()`.
+It contains metadata and relative paths; it is not a database.
 
-Path:
+Paths:
 
-- la proprietà `npu.models.directory` vale `models` per default;
-- i path di catalogo che iniziano con `models/` vengono rimappati sotto quella
-  directory nei flussi di discovery, download e risoluzione Ollama;
-- Rockchip usa file `.gguf` e può avere più quantizzazioni nella stessa
-  directory;
-- OpenVINO, Qualcomm e Ryzen AI usano directory modello.
+- the property `npu.models.directory` defaults to `models`;
+- catalog paths starting with `models/` are remapped under that directory in discovery, download, and Ollama resolution flows;
+- Rockchip uses `.gguf` files and can have multiple quantizations in the same directory;
+- OpenVINO, Qualcomm, and Ryzen AI use model directories.
 
-Il load diretto non-Rockchip passa ancora `metadata.path()` al driver senza
-chiamare `resolveConfiguredPath()`. Con `npu.models.directory` diverso da
-`models`, download e discovery possono vedere il modello mentre il driver
-riceve il vecchio path relativo. È un punto da correggere prima di dichiarare
-supportato un models root personalizzato per quei backend.
+Direct non-Rockchip loading still passes `metadata.path()` to the driver without calling `resolveConfiguredPath()`. When `npu.models.directory` is different from `models`, download and discovery can see the model while the driver receives the old relative path. This point must be fixed before declaring a custom models root supported for those backends.
 
-Per Rockchip:
+For Rockchip:
 
-- la quantizzazione raccomandata è `Q4_K_M`;
-- un nome Ollama può usare il tag `:Q4_K_M`;
-- il file viene selezionato cercando la quantizzazione nel filename;
-- il context length viene letto dai metadati GGUF quando disponibile.
+- the recommended quantization is `Q4_K_M`;
+- an Ollama name can use the tag `:Q4_K_M`;
+- the file is selected by matching the quantization in the filename;
+- the context length is read from GGUF metadata when available.
 
-Il downloader considera presente un modello solo oltre 50 MiB. Non verifica
-checksum, firma o contenuto del modello.
+The downloader considers a model present only if its size exceeds 50 MiB. It does not verify checksum, signature, or model content.
 
-Le directory non presenti nel catalogo vengono scoperte in modo euristico:
-nomi contenenti `-ov` diventano OpenVINO, tutti gli altri Qualcomm. Questa
-euristica non registra automaticamente nuovi repository GGUF Rockchip.
+Directories not present in the catalog are discovered heuristically: names containing `-ov` become OpenVINO, all others Qualcomm. This heuristic does not automatically register new Rockchip GGUF repositories.
 
-## Alias Ollama
+## Ollama Aliases
 
-`OllamaModelService` implementa alias leggeri creati da `/api/create` e
-`/api/copy`. Vengono salvati, per default, in:
+`OllamaModelService` implements lightweight aliases created by `/api/create` and `/api/copy`. By default, they are saved to:
 
 ```text
 .npuhub/ollama-models.json
 ```
 
-Un alias può aggiungere template, system prompt, parametri e messaggi iniziali,
-ma non duplica i pesi. Gli alias ciclici vengono rifiutati in risoluzione. Un
-file alias corrotto viene ignorato all'avvio; non blocca il server.
+An alias can add template, system prompt, parameters, and initial messages,
+but does not duplicate weights. Cyclic aliases are rejected during resolution. A corrupted alias file is ignored at startup; it does not block the server.
 
-## Preparazione del prompt
+## Prompt Preparation
 
-`OllamaInferenceFacade` è il punto comune tra Ollama e OpenAI:
+`OllamaInferenceFacade` is the common entry point between Ollama and OpenAI:
 
-- unisce parametri dell'alias e opzioni della richiesta;
-- verifica che il modello richiesto sia proprio quello già caricato;
-- rifiuta immagini;
-- rende prompt Phi, Gemma o un formato generico;
-- inserisce tool e vincoli JSON come istruzioni testuali;
-- rimuove i turni completi più vecchi quando la stima supera il budget;
-- applica le stop sequence sul testo emesso.
+- merges alias parameters and request options;
+- verifies that the requested model is indeed the one already loaded;
+- rejects images;
+- renders Phi, Gemma, or generic format prompts;
+- inserts tools and JSON constraints as textual instructions;
+- removes older complete turns when estimated prompt length exceeds the budget;
+- applies stop sequences on emitted text.
 
-Il conteggio usato per compattare la chat è una stima basata sui byte UTF-8,
-non il tokenizer reale. Rocket applica una seconda protezione token-level.
+The token count used for chat compaction is an estimate based on UTF-8 bytes, not the real tokenizer. Rocket applies a second token-level protection layer.
 
-Parametri inoltrati integralmente solo a Rocket:
+Parameters forwarded in full only to Rocket:
 
 ```text
 temperature, top_p, top_k, min_p, seed, repeat_last_n,
 repeat_penalty, frequency_penalty, presence_penalty
 ```
 
-Gli altri driver ricevono solo `temperature`, `top_p` e `max_tokens`.
+Other drivers receive only `temperature`, `top_p`, and `max_tokens`.
 
-## Concorrenza e stato
+## Concurrency and State
 
-Lo stato è interamente process-local:
+State is entirely process-local:
 
-- modello caricato;
+- loaded model;
 - API enabled/disabled;
-- impostazioni UI;
-- progress dei download e dei task;
-- log del pannello;
-- metriche correnti/ultime.
+- UI settings;
+- download and task progress;
+- control panel logs;
+- current/latest metrics.
 
-Non c'è coordinamento tra più istanze dell'applicazione. Due processi sulla
-stessa NPU o sulla stessa directory modelli possono interferire.
+There is no coordination between multiple application instances. Two processes on the same NPU or same models directory can interfere with each other.
 
-`InferenceService` usa un pool fisso di quattro thread per lo streaming. Il
-valore UI `maxConcurrentInferences` non configura questo pool. I metodi dei
-driver sono sincronizzati e i runtime C++ usano stato globale, quindi il
-parallelismo effettivo è limitato e non va aumentato senza riprogettare lo
-stato nativo.
+`InferenceService` uses a fixed thread pool of four threads for streaming. The UI setting `maxConcurrentInferences` does not configure this pool. Driver methods are synchronized and C++ runtimes use global state, so actual parallelism is limited and should not be increased without redesigning native state.
 
-`InferenceMetrics` pubblica una vista process-wide dell'operazione corrente o
-dell'ultima completata. Con più richieste contemporanee, `CURRENT` rappresenta
-una sola misura e non è una sorgente per accounting preciso.
+`InferenceMetrics` publishes a process-wide view of the current or last completed operation. With multiple concurrent requests, `CURRENT` represents only a single measurement and is not a source for precise accounting.
 
 ## Frontend
 
-La pagina `templates/index.html` è renderizzata con Thymeleaf. I dati dinamici
-successivi arrivano da `static/js/app.js`, che:
+The page `templates/index.html` is rendered with Thymeleaf. Subsequent dynamic data is fetched by `static/js/app.js`, which:
 
-- interroga hardware, diagnostica, modelli e log;
-- gestisce download/load/unload;
-- abilita o ferma l'API;
-- consuma lo stream NDJSON di `/api/chat`;
-- salva impostazioni process-local.
+- queries hardware, diagnostics, models, and logs;
+- handles download/load/unload;
+- enables or stops the API;
+- consumes the NDJSON stream from `/api/chat`;
+- saves process-local settings.
 
-Non c'è pipeline frontend. Le librerie `marked` e `DOMPurify` sono vendorizzate
-sotto `static/vendor`.
+There is no frontend build pipeline. The `marked` and `DOMPurify` libraries are vendorized under `static/vendor`.
 
-## Osservabilità
+## Observability
 
-`HardwareDiscoveryService` legge:
+`HardwareDiscoveryService` reads:
 
-- `/proc/stat` per la CPU;
-- `/proc/meminfo` per RAM e swap;
-- runtime power management sotto `/sys/devices/platform/*.npu/power` per la
-  percentuale Rockchip;
-- JVM e device node per le altre informazioni.
+- `/proc/stat` for CPU;
+- `/proc/meminfo` for RAM and swap;
+- runtime power management under `/sys/devices/platform/*.npu/power` for Rockchip percentage;
+- JVM and device nodes for other information.
 
-`LogService` conserva al massimo 2000 record in memoria. Non intercetta
-automaticamente tutti i log SLF4J: contiene solo eventi aggiunti esplicitamente
-dai servizi e dal callback Rocket.
+`LogService` keeps a maximum of 2000 records in memory. It does not automatically intercept all SLF4J logs: it contains only events explicitly added by services and the Rocket callback.
 
-## Debito tecnico da considerare
+## Technical Debt to Consider
 
-- nessun test unitario, di integrazione o hardware;
-- API amministrative non autenticate e CORS `*`;
-- setup remoto capace di installare pacchetti e compilare codice;
-- impostazioni UI non persistenti e in parte non collegate alla configurazione;
-- catalogo hardcoded;
-- download senza checksum, resume o cancellazione;
-- dipendenza da `llama.cpp` master anziché da un commit;
-- stub nativi indistinguibili da backend reali tramite il solo probe;
-- probe Rocket e versione runtime ancora placeholder;
-- path personalizzato non applicato al load diretto non-Rockchip;
-- un solo modello e stato nativo globale;
-- assenza di graceful shutdown esplicito per executor e modello;
-- nessun file di licenza nello stato corrente.
+- no unit, integration, or hardware tests;
+- unauthenticated administrative APIs and CORS `*`;
+- remote setup capable of installing packages and compiling code;
+- UI settings non-persistent and partly disconnected from configuration;
+- hardcoded catalog;
+- download without checksum, resume, or cancellation;
+- dependency on `llama.cpp` master instead of a fixed commit;
+- native stubs indistinguishable from real backends via probing alone;
+- Rocket probe and runtime version still placeholders;
+- custom path not applied to direct non-Rockchip load;
+- single model and global native state;
+- lack of explicit graceful shutdown for executor and model;
+- no license file in current state.

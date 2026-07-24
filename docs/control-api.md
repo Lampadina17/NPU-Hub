@@ -1,4 +1,4 @@
-# API del control panel
+# Control Panel API
 
 Base path:
 
@@ -6,28 +6,25 @@ Base path:
 /api/v1/control
 ```
 
-Queste API sono amministrative, non hanno autenticazione e accettano richieste
-cross-origin. Possono scaricare o cancellare modelli, compilare codice e
-installare driver. Usarle solo su una rete fidata.
+These administrative APIs operate without authentication and accept cross-origin requests. They can download or delete models, compile code, and install drivers. Only use them on a trusted network.
 
-## Hardware e diagnostica
+## Hardware and Diagnostics
 
-| Metodo e path | Risposta |
+| Method and path | Response |
 | --- | --- |
-| `GET /hardware` | Lista `HardwareInfo` di tutti i backend |
-| `GET /diagnostics` | OS, JVM, CPU, RAM, swap, NPU e metriche inferenza |
-| `GET /logs?afterId=0` | Log in-memory successivi all'ID |
+| `GET /hardware` | List of `HardwareInfo` for all backends |
+| `GET /diagnostics` | OS, JVM, CPU, RAM, swap, NPU, and inference metrics |
+| `GET /logs?afterId=0` | In-memory logs following the given ID |
 
-Esempio:
+Example:
 
 ```bash
 curl http://localhost:8080/api/v1/control/hardware
 ```
 
-`/diagnostics` campiona contatori cumulativi Linux: CPU e NPU hanno significato
-tra due letture successive, non come misura istantanea assoluta.
+`/diagnostics` samples cumulative Linux counters: CPU and NPU values are meaningful between two consecutive readings, not as an absolute instantaneous measurement.
 
-## Stato API
+## API Status
 
 ### `GET /api/status`
 
@@ -40,7 +37,7 @@ tra due letture successive, non come misura istantanea assoluta.
 
 ### `POST /api/start`
 
-Abilita l'inferenza solo se un modello è caricato.
+Enables inference only if a model is loaded.
 
 ```bash
 curl -X POST http://localhost:8080/api/v1/control/api/start
@@ -48,22 +45,22 @@ curl -X POST http://localhost:8080/api/v1/control/api/start
 
 ### `POST /api/stop`
 
-Disabilita le route coperte dal gate. Non scarica il modello.
+Disables routes covered by the gate. Does not unload the model.
 
 ```bash
 curl -X POST http://localhost:8080/api/v1/control/api/stop
 ```
 
-Lo stato non è persistente.
+The status is not persistent.
 
-## Modelli
+## Models
 
 ### `GET /models`
 
-Parametri:
+Parameters:
 
-- `all=false` per il backend auto-selezionato;
-- `all=true` per tutto il catalogo.
+- `all=false` for the auto-selected backend;
+- `all=true` for the entire catalog.
 
 ```bash
 curl 'http://localhost:8080/api/v1/control/models?all=true'
@@ -78,9 +75,7 @@ curl 'http://localhost:8080/api/v1/control/models?all=true'
 }
 ```
 
-Per `unsloth/*` la quantizzazione viene validata. Per gli altri repository il
-campo viene ignorato e viene scaricato il repository completo. La chiamata
-avvia un task asincrono.
+For `unsloth/*`, the quantization is validated. For other repositories, this field is ignored and the full repository is downloaded. The call starts an asynchronous task.
 
 ### `GET /models/download/status`
 
@@ -90,7 +85,7 @@ curl --get http://localhost:8080/api/v1/control/models/download/status \
   --data-urlencode 'quantization=Q4_K_M'
 ```
 
-Risposta:
+Response:
 
 ```json
 {
@@ -112,20 +107,17 @@ Risposta:
 }
 ```
 
-Il modello deve essere già presente. Il processo accetta un solo modello
-caricato; questo endpoint non sostituisce automaticamente quello attivo.
+The model must already be present on disk. The process supports only a single loaded model at a time; this endpoint does not automatically replace the currently active one.
 
-Il payload non espone il context window: il controller usa 4096. Per caricare
-un contesto diverso va esteso il contratto e chiamata la overload a quattro
-argomenti di `ModelManagementService.loadModel`.
+The payload does not expose the context window size: the controller defaults to 4096. To load a different context size, the API contract must be extended and the four-argument overload of `ModelManagementService.loadModel` must be invoked.
 
 ### `POST /models/unload`
 
-Body non richiesto. Libera il modello corrente, ma non modifica il flag API.
+No body required. Unloads the current model, but does not modify the API enabled flag.
 
 ### `POST /models/delete`
 
-Intero modello:
+Entire model:
 
 ```json
 {
@@ -133,7 +125,7 @@ Intero modello:
 }
 ```
 
-Singola variante Rockchip:
+Single Rockchip variant:
 
 ```json
 {
@@ -142,25 +134,23 @@ Singola variante Rockchip:
 }
 ```
 
-La cancellazione è permanente. Per una variante Rockchip il modello deve
-essere prima scaricato. Per una directory completa, il servizio scarica
-automaticamente un eventuale modello attivo corrispondente.
+Deletion is permanent. For a Rockchip variant, the model must first be unloaded. For an entire directory, the service automatically unloads any corresponding active model.
 
-## Impostazioni
+## Settings
 
 ### `GET /settings`
 
-Restituisce impostazioni in memoria più:
+Returns in-memory settings plus:
 
 - `configuredBackend`;
 - `recommendedBackend`;
-- `preferredBackend` effettivo;
+- effective `preferredBackend`;
 - `backendSelectionMode`;
 - `recommendationAvailable`.
 
 ### `POST /settings`
 
-Accetta un oggetto JSON arbitrario e fa merge nella mappa in memoria:
+Accepts an arbitrary JSON object and merges it into the in-memory map:
 
 ```json
 {
@@ -171,21 +161,19 @@ Accetta un oggetto JSON arbitrario e fa merge nella mappa in memoria:
 }
 ```
 
-Non c'è validazione dello schema. Porta, directory e contesto non
-riconfigurano i bean Spring correnti. Vedere
-[Configurazione e operatività](configuration.md).
+There is no schema validation. Port, directory, and context settings do not reconfigure the active Spring beans. See [Configuration and operation](configuration.md).
 
 ## Setup
 
 ### `POST /setup/intel-driver`
 
-Avvia l'installazione Intel Ubuntu 24.04:
+Starts the Intel Ubuntu 24.04 installation:
 
-- scarica driver e Level Zero;
-- estrae pacchetti;
-- invoca `pkexec` e `apt-get`;
-- scrive una regola udev;
-- aggiunge l'utente al gruppo `render`.
+- downloads driver and Level Zero;
+- extracts packages;
+- invokes `pkexec` and `apt-get`;
+- writes a udev rule;
+- adds the user to the `render` group.
 
 Task ID: `intel-driver`.
 
@@ -197,18 +185,15 @@ Task ID: `intel-driver`.
 }
 ```
 
-Il valore viene usato per risolvere `workers/<workerType>`. Valori previsti:
-`rocket`, `openvino`, `ryzenai`.
+The value is used to resolve `workers/<workerType>`. Expected values: `rocket`, `openvino`, `ryzenai`.
 
-Per Rocket il task aggiorna `llama.cpp`, applica la patch e compila anche
-`ggml-rocket`. Per gli altri target usa il relativo CMake e richiede lo SDK
-vendor già installato.
+For Rocket, the task updates `llama.cpp`, applies the patch, and compiles `ggml-rocket` as well. For other targets, it invokes the respective CMake build and requires the vendor SDK to be already installed.
 
 Task ID: `build-<workerType>`.
 
 ### `POST /setup/modelscope`
 
-Esegue:
+Executes:
 
 ```text
 python3 -m pip install modelscope
@@ -216,8 +201,7 @@ python3 -m pip install modelscope
 
 Task ID: `modelscope-setup`.
 
-Il downloader applicativo attuale usa direttamente HTTP e non richiede
-ModelScope CLI; questo setup resta disponibile per compatibilità operativa.
+The current application downloader uses HTTP directly and does not require the ModelScope CLI; this setup option remains available for operational compatibility.
 
 ### `GET /setup/status`
 
@@ -234,16 +218,13 @@ curl --get http://localhost:8080/api/v1/control/setup/status \
 }
 ```
 
-Stato e progresso sono process-local. Un riavvio li azzera. Non è disponibile
-un endpoint di cancellazione.
+Status and progress are process-local. A restart resets them. No cancellation endpoint is available.
 
-## Errori
+## Errors
 
-Gli endpoint control restituiscono generalmente `400` per input o stato non
-valido e un oggetto con `error`. Non condividono un envelope rigorosamente
-uniforme.
+Control endpoints generally return `400` for invalid input or state along with an object containing `error`. They do not share a strictly uniform error envelope.
 
-Esempio:
+Example:
 
 ```json
 {
@@ -253,4 +234,4 @@ Esempio:
 }
 ```
 
-Per i contratti Ollama/OpenAI vedere [Compatibilità API](ollama-api.md).
+For Ollama/OpenAI API contracts, see [API Compatibility](ollama-api.md).

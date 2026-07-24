@@ -1,178 +1,171 @@
 # NPU Hub
 
-NPU Hub è un server di inferenza locale per NPU con:
+NPU Hub is a local inference server for NPUs featuring:
 
-- control panel web integrato;
-- API compatibili con Ollama e, in parte, OpenAI;
-- orchestrazione Java/Spring Boot;
-- adapter nativi JNI per Rockchip, Intel, AMD e Qualcomm;
-- download e gestione locale dei modelli.
+- an integrated web control panel;
+- APIs compatible with Ollama and partially with OpenAI;
+- Java/Spring Boot orchestration;
+- native JNI adapters for Rockchip, Intel, AMD, and Qualcomm;
+- local model download and management.
 
-Il progetto è in fase sperimentale. Non va considerato pronto per produzione:
-alcuni backend sono completi solo a livello di interfaccia, non ci sono ancora
-test automatici e le API non hanno autenticazione.
+The project is currently experimental. It should not be considered production-ready:
+some backends are complete only at the interface level, there are no automated tests yet,
+and the APIs do not have authentication.
 
-## Da leggere prima di modificare il codice
+## Read Before Modifying Code
 
-La documentazione tecnica è divisa per responsabilità:
+Technical documentation is divided by responsibility:
 
-- [Architettura e flussi](docs/architecture.md): componenti, stato globale,
-  ciclo di vita di un modello, concorrenza e confini tra Java e C++.
-- [Guida allo sviluppo](docs/development.md): prerequisiti, build, avvio,
-  modifica di driver/modelli/API e checklist JNI.
-- [Configurazione e operatività](docs/configuration.md): proprietà Spring,
-  variabili Rocket, directory persistenti, sicurezza e limiti operativi.
-- [API del control panel](docs/control-api.md): endpoint amministrativi,
-  payload e side effect.
-- [Compatibilità Ollama e OpenAI](docs/ollama-api.md): endpoint di inferenza,
-  streaming e comportamento dei client.
+- [Architecture and Flows](docs/architecture.md): components, global state,
+  model lifecycle, concurrency, and boundaries between Java and C++.
+- [Development Guide](docs/development.md): prerequisites, build, startup,
+  modifying drivers/models/APIs, and JNI checklist.
+- [Configuration and Operations](docs/configuration.md): Spring properties,
+  Rocket variables, persistent directories, security, and operational limits.
+- [Control Panel API](docs/control-api.md): administrative endpoints,
+  payloads, and side effects.
+- [Ollama and OpenAI Compatibility](docs/ollama-api.md): inference endpoints,
+  streaming, and client behavior.
 
-## Stato reale dei backend
+## Real Backend Status
 
-| Backend | Implementazione reale | Build standard `tools/build-all.sh` |
+| Backend | Real Implementation | Standard Build `tools/build-all.sh` |
 | --- | --- | --- |
-| Rockchip RK3588/RK3588S | Sì, `llama.cpp` + `ggml-rocket` in `workers/rocket` | Inclusa e impacchettata nel JAR |
-| Intel OpenVINO GenAI | Presente in `workers/openvino`, richiede SDK esterno | Non inclusa; viene impacchettato lo stub generico |
-| AMD Ryzen AI | Presente in `workers/ryzenai`, richiede SDK esterno | Non inclusa; viene impacchettato lo stub generico |
-| Qualcomm QAIRT/Genie | Non ancora integrata con lo SDK reale | Solo stub generico |
+| Rockchip RK3588/RK3588S | Yes, `llama.cpp` + `ggml-rocket` in `workers/rocket` | Included and packaged in the JAR |
+| Intel OpenVINO GenAI | Present in `workers/openvino`, requires external SDK | Not included; generic stub is packaged |
+| AMD Ryzen AI | Present in `workers/ryzenai`, requires external SDK | Not included; generic stub is packaged |
+| Qualcomm QAIRT/Genie | Not yet integrated with real SDK | Generic stub only |
 
-I file sotto `native/` sono adapter di compatibilità che simulano probe,
-caricamento e generazione. Non dimostrano che l'inferenza avvenga su NPU. Per
-OpenVINO e Ryzen AI le implementazioni reali sono quelle sotto `workers/`.
-Per Qualcomm non è ancora presente un worker reale.
+Files under `native/` are compatibility adapters that simulate probing,
+loading, and generation. They do not demonstrate that inference is happening on an NPU. For
+OpenVINO and Ryzen AI, the real implementations are located under `workers/`.
+For Qualcomm, a real worker is not yet available.
 
-Questa distinzione è importante: una libreria `.so` caricata correttamente non
-è, da sola, prova di accelerazione hardware.
+This distinction is important: a properly loaded `.so` library is not,
+by itself, proof of hardware acceleration.
 
-Anche il probe Rocket è ancora provvisorio: il metodo nativo restituisce
-sempre disponibile e il driver Java lo combina con il device node tramite un
-OR. La conferma reale arriva solo quando il plugin Rocket inizializza il device
-e il load del modello riesce.
+The Rocket probe is also provisional: the native method always returns
+available, and the Java driver combines it with the device node via an OR operation.
+Real confirmation only comes when the Rocket plugin initializes the device and model loading succeeds.
 
-## Percorso rapido
+## Quick Start
 
-Prerequisiti minimi per compilare il control plane:
+Minimum prerequisites to build the control plane:
 
 - Linux;
 - JDK 17;
-- Maven 3.9 o compatibile.
+- Maven 3.9 or compatible.
 
-Verifica della parte Java:
+Verify the Java component:
 
 ```bash
 mvn test
 ```
 
-Se Maven non è installato globalmente ed è già presente il tool locale:
+If Maven is not installed globally and the local tool is already present:
 
 ```bash
 ./.build-tools/apache-maven-3.9.9/bin/mvn test
 ```
 
-Avvio per sviluppo del pannello e delle API:
+Start for control panel and API development:
 
 ```bash
 mvn spring-boot:run
 ```
 
-Il pannello è disponibile su `http://localhost:8080`. Senza una NPU supportata
-e una libreria nativa reale sarà possibile ispezionare l'interfaccia, ma non
-eseguire inferenza reale.
+The control panel will be available at `http://localhost:8080`. Without a supported NPU
+and a real native library, you can inspect the interface, but real inference cannot be executed.
 
-### Build completa Rockchip
+### Full Rockchip Build
 
-La build completa richiede anche Git, CMake, un compilatore C/C++, gli header
-JNI e accesso alla rete:
+The full build also requires Git, CMake, a C/C++ compiler, JNI headers, and network access:
 
 ```bash
 tools/build-all.sh
 java -jar target/npu-hub-1.0.0-SNAPSHOT.jar
 ```
 
-Lo script:
+The script:
 
-1. aggiorna `llama.cpp` a `origin/master`;
-2. applica la patch Rocket;
-3. clona o riusa `ggml-rocket` e `rocket-userspace`;
-4. compila il runtime Rocket e gli adapter generici;
-5. copia le librerie in `src/main/resources/native`;
-6. esegue `mvn clean package`.
+1. updates `llama.cpp` to `origin/master`;
+2. applies the Rocket patch;
+3. clones or reuses `ggml-rocket` and `rocket-userspace`;
+4. compiles the Rocket runtime and generic adapters;
+5. copies libraries to `src/main/resources/native`;
+6. runs `mvn clean package`.
 
-La build non è completamente riproducibile perché segue il branch corrente di
-`llama.cpp`. Se la patch non è più applicabile, lo script si interrompe invece
-di produrre un runtime con ABI incoerente.
+The build is not fully reproducible because it tracks the current branch of
+`llama.cpp`. If the patch can no longer be applied, the script halts instead of producing a runtime with an inconsistent ABI.
 
-## Flusso operativo
+## Operational Workflow
 
-L'ordine previsto è:
+The intended sequence is:
 
-1. aprire il pannello;
-2. verificare che il backend sia marcato come disponibile;
-3. scaricare o posizionare un modello compatibile;
-4. caricare esplicitamente il modello;
-5. avviare l'API di inferenza dal pannello;
-6. usare la chat integrata o un client Ollama/OpenAI;
-7. fermare l'API e scaricare il modello quando necessario.
+1. open the control panel;
+2. verify that the backend is marked as available;
+3. download or place a compatible model;
+4. explicitly load the model;
+5. start the inference API from the control panel;
+6. use the integrated chat or an Ollama/OpenAI client;
+7. stop the API and unload the model when necessary.
 
-Il processo mantiene un solo modello caricato alla volta. Scaricare un modello
-su disco, caricarlo in memoria e abilitare gli endpoint di inferenza sono tre
-operazioni distinte.
+The process maintains only one loaded model at a time. Downloading a model
+to disk, loading it into memory, and enabling inference endpoints are three
+distinct operations.
 
-## Struttura del repository
+## Repository Structure
 
 ```text
 src/main/java/com/npuhub/
-  core/driver/       contratto dei driver, registry e implementazioni Java
-  core/model/        record ed enum condivisi
-  jni/               firme JNI e caricamento delle librerie native
-  service/           modelli, inferenza, setup, metriche e stato API
-  web/               filtri, error handling e controller HTTP
+  core/driver/       driver contract, registry, and Java implementations
+  core/model/        shared records and enums
+  jni/               JNI signatures and native library loading
+  service/           models, inference, setup, metrics, and API status
+  web/               filters, error handling, and HTTP controllers
 
 src/main/resources/
-  application.yml    configurazione di default
-  templates/         pagina Thymeleaf
-  static/            JavaScript, CSS e vendor frontend
-  native/            output generato per le librerie impacchettate
+  application.yml    default configuration
+  templates/         Thymeleaf page
+  static/            JavaScript, CSS, and frontend vendors
+  native/            generated output for packaged libraries
 
-native/               adapter C++ generici/stub
-workers/rocket/       runtime Rockchip reale
-workers/openvino/     adapter OpenVINO GenAI reale
-workers/ryzenai/      adapter ONNX Runtime GenAI reale
-tools/                build, pulizia e download modelli
-docs/                 documentazione tecnica
+native/               generic C++ adapters/stubs
+workers/rocket/       real Rockchip runtime
+workers/openvino/     real OpenVINO GenAI adapter
+workers/ryzenai/      real ONNX Runtime GenAI adapter
+tools/                build, cleanup, and model download scripts
+docs/                 technical documentation
 ```
 
-Il frontend non usa Node, Vite o un bundler: è HTML Thymeleaf con JavaScript e
-CSS statici. Le modifiche sotto `src/main/resources/static` sono servite
-direttamente da Spring Boot.
+The frontend does not use Node, Vite, or a bundler: it is Thymeleaf HTML with static JavaScript and CSS. Modifications under `src/main/resources/static` are served directly by Spring Boot.
 
-## Vincoli importanti
+## Important Constraints
 
-- Non esiste fallback CPU/GPU a livello di selezione Java. Rocket usa però una
-  modalità ibrida: prefill conveniente su NPU e decode breve su CPU.
-- I controller di controllo sono esposti senza autenticazione e con CORS
-  permissivo. Non pubblicare la porta su una rete non fidata.
-- Le impostazioni salvate dal pannello sono solo in memoria e, oggi, diverse
-  voci non riconfigurano i componenti Spring già avviati.
-- `mvn test` passa, ma non ci sono sorgenti sotto `src/test`: non copre
-  inferenza, hardware, streaming o compatibilità API.
-- Il catalogo modelli è hardcoded in `ModelManagementService`.
-- Il file `LICENSE` non è presente nello stato attuale del progetto: chiarire
-  la licenza prima di distribuire binari o sorgenti.
+- There is no CPU/GPU fallback at the Java selection level. However, Rocket uses a
+  hybrid mode: efficient prompt prefill on NPU and short decode on CPU.
+- Control controllers are exposed without authentication and with permissive CORS.
+  Do not publish the port on an untrusted network.
+- Settings saved from the control panel exist only in memory and currently do not reconfigure already started Spring components.
+- `mvn test` passes, but there are no source files under `src/test`: it does not cover
+  inference, hardware, streaming, or API compatibility.
+- The model catalog is hardcoded in `ModelManagementService`.
+- The `LICENSE` file is not present in the current state of the project: clarify
+  licensing before distributing binaries or source code.
 
-## Pulizia
+## Cleanup
 
-Per rimuovere solo gli output generati:
+To remove only generated outputs:
 
 ```bash
 tools/cleanup.sh --builds
 ```
 
-Per includere anche Maven scaricato localmente e il checkout di `llama.cpp`:
+To also include locally downloaded Maven and the `llama.cpp` checkout:
 
 ```bash
 tools/cleanup.sh --all
 ```
 
-Lo script mostra i target e chiede conferma. Non rimuove modelli,
-configurazione, `ggml-rocket` o `rocket-userspace`.
+The script displays targets and prompts for confirmation. It does not remove models,
+configuration, `ggml-rocket`, or `rocket-userspace`.

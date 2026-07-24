@@ -1,59 +1,57 @@
-# Guida allo sviluppo
+# Development Guide
 
-## Prerequisiti
+## Prerequisites
 
-Per lavorare sul solo control plane Java:
+To work solely on the Java control plane:
 
 - Linux;
-- JDK 17, incluso `javac`;
-- Maven 3.9 o compatibile.
+- JDK 17, including `javac`;
+- Maven 3.9 or compatible.
 
-Per gli adapter nativi:
+For native adapters:
 
-- CMake 3.16 o successivo;
-- compilatore C/C++ con supporto C++17;
-- header JNI del JDK;
+- CMake 3.16 or later;
+- C/C++ compiler with C++17 support;
+- JDK JNI headers;
 - Git;
-- SDK e driver del backend target.
+- SDK and drivers for the target backend.
 
-Ryzen AI richiede CMake 3.20 e C++20. Gli script di download e setup richiedono
-anche Python 3, `curl`, `tar` e accesso alla rete.
+Ryzen AI requires CMake 3.20 and C++20. Download and setup scripts also require Python 3, `curl`, `tar`, and network access.
 
-## Verifica Java
+## Java Verification
 
 ```bash
 mvn test
 ```
 
-Il repository può contenere Maven in `.build-tools`:
+The repository may include Maven under `.build-tools`:
 
 ```bash
 ./.build-tools/apache-maven-3.9.9/bin/mvn test
 ```
 
-Oggi non esistono test sotto `src/test`. Il risultato `BUILD SUCCESS` prova
-che le 41 classi Java compilano e che le risorse vengono copiate, non che:
+Currently, there are no tests under `src/test`. A `BUILD SUCCESS` result proves that the 41 Java classes compile and resources are copied, but not that:
 
-- Spring avvii correttamente con una specifica `.so`;
-- JNI e Java abbiano ABI coerente;
-- un device NPU sia raggiungibile;
-- streaming e payload siano compatibili con i client;
-- il modello generi output corretto.
+- Spring starts correctly with a specific `.so`;
+- JNI and Java have a consistent ABI;
+- an NPU device is reachable;
+- streaming and payloads are compatible with clients;
+- the model generates correct output.
 
-## Avvio in sviluppo
+## Running in Development
 
 ```bash
 mvn spring-boot:run
 ```
 
-Oppure:
+Or:
 
 ```bash
 mvn package
 java -jar target/npu-hub-1.0.0-SNAPSHOT.jar
 ```
 
-Per cambiare porta o directory modelli:
+To change port or models directory:
 
 ```bash
 SERVER_PORT=11434 \
@@ -61,32 +59,28 @@ NPU_MODELS_DIRECTORY=/srv/npu-hub/models \
 java -jar target/npu-hub-1.0.0-SNAPSHOT.jar
 ```
 
-Spring Boot serve frontend e API dallo stesso processo. Non serve avviare un
-server Node.
+Spring Boot serves the frontend and APIs from the same process. No Node server needs to be started.
 
-## Tipi di build nativa
+## Native Build Types
 
-### Adapter generici
+### Generic Adapters
 
 ```bash
 cmake -S native -B native/build -DCMAKE_BUILD_TYPE=Release
 cmake --build native/build --parallel
 ```
 
-Questa build crea stub utili per verificare caricamento e firme semplici. Non
-va usata per concludere che l'inferenza sia accelerata. In particolare lo stub
-Rockchip non implementa tutte le firme correnti e viene sostituito dalla build
-completa.
+This build creates stub libraries useful for testing loading and simple signatures. It must not be used to conclude that inference is hardware-accelerated. In particular, the Rockchip stub does not implement all current native signatures and is replaced by the full build.
 
 ### Rockchip Rocket
 
-Il percorso supportato dalla build completa è:
+The supported path for the full build is:
 
 ```bash
 NPU_HUB_BUILD_JOBS=2 tools/build-all.sh
 ```
 
-Lo script usa o crea:
+The script uses or creates:
 
 ```text
 .rocket-runtime/llama.cpp
@@ -98,114 +92,99 @@ src/main/resources/native
 target
 ```
 
-`llama.cpp` viene aggiornato a `origin/master` a ogni esecuzione. La patch
-`workers/rocket/patches/llama-rocket-strict.patch` deve applicarsi al checkout.
-Prima di aggiornare manualmente `llama.cpp`, verificare:
+`llama.cpp` is updated to `origin/master` on every run. The patch `workers/rocket/patches/llama-rocket-strict.patch` must apply cleanly to the checkout. Before manually updating `llama.cpp`, verify:
 
 ```bash
 git -C .rocket-runtime/llama.cpp apply --check \
   "$(pwd)/workers/rocket/patches/llama-rocket-strict.patch"
 ```
 
-Se la patch è già applicata, il controllo corretto è:
+If the patch is already applied, the correct check is:
 
 ```bash
 git -C .rocket-runtime/llama.cpp apply --reverse --check \
   "$(pwd)/workers/rocket/patches/llama-rocket-strict.patch"
 ```
 
-Le librerie `llama`, GGML, CPU, Rocket e JNI impacchettate devono provenire
-dallo stesso albero e dalla stessa build. Mescolare ABI diverse produce errori
-di simboli o crash a runtime.
+The packaged `llama`, GGML, CPU, Rocket, and JNI libraries must come from the same build tree and compilation run. Mixing different ABIs causes symbol errors or runtime crashes.
 
-### OpenVINO reale
+### Real OpenVINO
 
-L'implementazione reale è `workers/openvino/src/openvino_jni.cpp`.
-Occorre una distribuzione che esponga i package CMake `OpenVINOGenAI` e
-`OpenVINO`:
+The actual implementation resides in `workers/openvino/src/openvino_jni.cpp`. It requires a distribution providing the `OpenVINOGenAI` and `OpenVINO` CMake packages:
 
 ```bash
 cmake -S workers/openvino -B workers/openvino/build \
   -DCMAKE_BUILD_TYPE=Release \
-  -DCMAKE_PREFIX_PATH=/percorso/openvino
+  -DCMAKE_PREFIX_PATH=/path/to/openvino
 cmake --build workers/openvino/build --parallel
 ```
 
-Il post-build copia `libnpu_openvino_jni.so` in `native/build`. Per inserirla
-nel JAR, va copiata intenzionalmente in
-`src/main/resources/native/libnpu_openvino_jni.so` prima di `mvn package`.
-Verificare anche che le dipendenze OpenVINO siano raggiungibili dal loader
-dinamico a runtime.
+The post-build step copies `libnpu_openvino_jni.so` into `native/build`. To bundle it into the JAR, it must be intentionally copied to `src/main/resources/native/libnpu_openvino_jni.so` before running `mvn package`. Also ensure that OpenVINO dependencies are accessible to the dynamic linker at runtime.
 
-`tools/build-all.sh` ricompila gli adapter generici e può sovrascrivere questo
-file con lo stub. Non eseguire i due flussi alla cieca.
+`tools/build-all.sh` recompiles generic adapters and may overwrite this file with the stub. Do not run both build workflows blindly.
 
-### Ryzen AI reale
+### Real Ryzen AI
 
-L'implementazione reale è `workers/ryzenai/src/ryzenai_jni.cpp`:
+The actual implementation resides in `workers/ryzenai/src/ryzenai_jni.cpp`:
 
 ```bash
-RYZEN_AI_INSTALLATION_PATH=/percorso/ryzen-ai \
+RYZEN_AI_INSTALLATION_PATH=/path/to/ryzen-ai \
 cmake -S workers/ryzenai -B workers/ryzenai/build \
   -DCMAKE_BUILD_TYPE=Release
 cmake --build workers/ryzenai/build --parallel
 ```
 
-La configurazione cerca header e libreria ONNX Runtime GenAI. È possibile
-passare direttamente:
+The build configuration looks for ONNX Runtime GenAI headers and library. You can pass them directly:
 
 ```text
 ONNXRUNTIME_GENAI_INCLUDE_DIR
 ONNXRUNTIME_GENAI_LIBRARY
 ```
 
-Anche qui il post-build copia in `native/build`; packaging e dipendenze runtime
-restano responsabilità della build di distribuzione.
+Here too, the post-build step copies to `native/build`; packaging and runtime dependencies remain the responsibility of the distribution build.
 
 ### Qualcomm
 
-Non esiste ancora `workers/qualcomm`. `native/qualcomm` è uno stub. Per
-aggiungere il backend reale servono almeno:
+`workers/qualcomm` does not exist yet. `native/qualcomm` is a stub. Adding the real backend requires at least:
 
-1. integrazione QAIRT/Genie C++;
-2. probe reale dello SDK;
-3. load/unload e generazione streaming;
-4. gestione delle librerie dipendenti;
-5. target CMake e staging nel JAR;
-6. test su hardware.
+1. QAIRT/Genie C++ integration;
+2. real SDK probe;
+3. load/unload and streaming generation;
+4. dependent library management;
+5. CMake targets and JAR staging;
+6. hardware testing.
 
-## Regole per modificare JNI
+## Rules for Modifying JNI
 
-Ogni modifica al contratto nativo deve essere atomica:
+Every modification to the native contract must be atomic:
 
-1. aggiornare la classe bridge Java;
-2. aggiornare tutte le implementazioni C++ con lo stesso simbolo;
-3. aggiornare il driver Java che invoca il metodo;
-4. aggiornare CMake e staging se cambiano dipendenze o nomi;
-5. pulire le vecchie `.so`;
-6. ricompilare nativo e JAR;
-7. verificare con `nm -D` i simboli esportati;
-8. avviare con il backend reale e fare load, generate, stream e unload.
+1. update the Java bridge class;
+2. update all C++ implementations with the matching symbol;
+3. update the Java driver invoking the method;
+4. update CMake and staging if dependencies or names change;
+5. clean up old `.so` files;
+6. recompile native libraries and the JAR;
+7. verify exported symbols using `nm -D`;
+8. launch with the real backend and perform load, generate, stream, and unload.
 
-Esempio:
+Example:
 
 ```bash
 nm -D workers/rocket/build/bin/libnpu_rockchip_jni.so \
   | rg 'Java_com_npuhub_jni_rockchip_RockchipNativeBridge'
 ```
 
-Se compare `UnsatisfiedLinkError`, controllare nell'ordine:
+If `UnsatisfiedLinkError` occurs, check in order:
 
-- quale copia della libreria è stata caricata;
-- simbolo e signature JNI;
-- dipendenze con `ldd`;
-- coerenza ABI tra `libllama`, `libggml-*` e plugin Rocket;
-- architettura del binario con `file`.
+- which copy of the library was loaded;
+- JNI symbol and signature;
+- dependencies using `ldd`;
+- ABI consistency between `libllama`, `libggml-*`, and Rocket plugin;
+- binary architecture using `file`.
 
-## Modificare il catalogo modelli
+## Modifying the Model Catalog
 
-Il catalogo è in
-`ModelManagementService.initCatalogModels()`. Ogni voce definisce:
+The catalog is defined in `ModelManagementService.initCatalogModels()`. Each entry defines:
 
 ```text
 id, name, path, architecture, quantization, parameterCount,
@@ -214,121 +193,109 @@ contextWindow, compatibleBackend
 
 Checklist:
 
-1. usare un ID uguale al repository remoto;
-2. scegliere un path sotto `models/`;
-3. impostare l'architettura perché decide il template chat;
-4. per Rockchip usare una quantizzazione ammessa;
-5. verificare il filename GGUF reale;
-6. verificare download, rilevamento >50 MiB, load e `/api/tags`;
-7. verificare `/api/show` e context length GGUF.
+1. use an ID matching the remote repository;
+2. choose a path under `models/`;
+3. set the architecture as it determines the chat template;
+4. for Rockchip, use a permitted quantization;
+5. check the real GGUF filename;
+6. verify download, >50 MiB detection, load, and `/api/tags`;
+7. verify `/api/show` and GGUF context length.
 
-Per aggiungere una nuova quantizzazione Rockchip, aggiornare
-`ROCKCHIP_QUANTIZATIONS`. Il matcher viene usato da catalogo, downloader,
-risoluzione Ollama e cancellazione: un cambiamento ha effetto su tutti questi
-flussi.
+To add a new Rockchip quantization, update `ROCKCHIP_QUANTIZATIONS`. The matcher is used by the catalog, downloader, Ollama resolution, and deletion: a change affects all these workflows.
 
-## Aggiungere un backend
+## Adding a Backend
 
-Un nuovo backend attraversa più livelli:
+Adding a new backend involves multiple layers:
 
-1. valore in `BackendType`;
-2. implementazione Spring di `NpuDriver`;
-3. bridge Java con firme native;
-4. implementazione C++ reale;
-5. probe hardware;
-6. target CMake e packaging;
-7. priorità e ordine display in `NpuDriverRegistry`;
-8. catalogo modelli;
-9. gruppi e selettori nel frontend;
-10. documentazione e test.
+1. enum value in `BackendType`;
+2. Spring implementation of `NpuDriver`;
+3. Java bridge with native signatures;
+4. real C++ implementation;
+5. hardware probe;
+6. CMake targets and packaging;
+7. priority and display order in `NpuDriverRegistry`;
+8. model catalog;
+9. frontend groups and selectors;
+10. documentation and tests.
 
-Puntare a un probe fail-closed: un backend non deve dichiararsi disponibile
-perché la libreria si è caricata. Il probe deve verificare device, runtime
-vendor e una operazione minima significativa. Rockchip oggi non rispetta
-ancora questa regola perché il probe nativo restituisce sempre `true`.
+Aim for a fail-closed probe: a backend should not declare itself available merely because its library loaded. The probe must verify the device, vendor runtime, and perform a minimal meaningful operation. Currently, Rockchip does not follow this rule yet because its native probe always returns `true`.
 
-## Modificare le API
+## Modifying the APIs
 
-Le superfici compatibili condividono `OllamaInferenceFacade`; la logica di
-prompt e sampling va modificata lì quando deve rimanere coerente tra Ollama e
-OpenAI.
+Compatible API surfaces share `OllamaInferenceFacade`; prompt and sampling logic should be modified there whenever it needs to remain consistent across Ollama and OpenAI.
 
-Prestare attenzione ai protocolli:
+Pay attention to protocol differences:
 
-- Ollama streaming: `application/x-ndjson`, un JSON per riga;
-- OpenAI streaming: `text/event-stream`, eventi SSE e terminatore previsto;
-- non streaming: un singolo JSON;
-- errori Ollama: `{"error":"..."}`;
-- errori OpenAI: oggetto `error` annidato.
+- Ollama streaming: `application/x-ndjson`, one JSON per line;
+- OpenAI streaming: `text/event-stream`, SSE events and expected terminator;
+- non-streaming: a single JSON object;
+- Ollama errors: `{"error":"..."}`;
+- OpenAI errors: nested error object.
 
-Quando si aggiunge un endpoint di inferenza che deve rispettare start/stop,
-aggiornare anche `InferenceApiGateFilter.isInferencePath()`.
+When adding an inference endpoint that must obey start/stop, also update `InferenceApiGateFilter.isInferencePath()`.
 
-Le API amministrative stanno in `ControlPanelApiController`. Non inserire
-comandi esterni nei controller: vanno confinati in un servizio e devono esporre
-stato/progresso.
+Administrative APIs reside in `ControlPanelApiController`. Do not put external command execution inside controllers: wrap them in a service and expose status/progress.
 
-## Modificare il frontend
+## Modifying the Frontend
 
-File principali:
+Main files:
 
-- `templates/index.html`: struttura e contenuto server-rendered;
-- `static/js/app.js`: stato, fetch, stream chat e azioni;
-- `static/css/style.css`: layout e temi;
-- `static/vendor`: librerie vendorizzate.
+- `templates/index.html`: server-rendered structure and content;
+- `static/js/app.js`: state, fetch, chat streaming, and actions;
+- `static/css/style.css`: layout and themes;
+- `static/vendor`: vendorized libraries.
 
-Non c'è build frontend. Dopo una modifica:
+There is no frontend build step. After making a change:
 
-1. avviare Spring con DevTools;
-2. fare hard refresh del browser;
-3. controllare console browser e network;
-4. provare viewport desktop e mobile;
-5. verificare che Markdown passi ancora da DOMPurify.
+1. start Spring with DevTools;
+2. perform a hard refresh in the browser;
+3. check the browser console and network tab;
+4. test both desktop and mobile viewports;
+5. verify that Markdown is still sanitized by DOMPurify.
 
-## Test da introdurre
+## Tests to Add
 
-Priorità consigliata:
+Recommended priority:
 
-1. unit test per risoluzione nomi/quantizzazioni e path;
-2. unit test per `GgufMetadataReader`;
-3. test MVC per gate, error envelope e control API;
-4. test di streaming NDJSON/SSE;
-5. test di alias e persistenza su directory temporanea;
-6. fake `NpuDriver` per lifecycle e concorrenza;
-7. smoke test nativo separato per backend/hardware.
+1. unit tests for name/quantization resolution and paths;
+2. unit tests for `GgufMetadataReader`;
+3. MVC tests for gate, error envelope, and control APIs;
+4. NDJSON/SSE streaming tests;
+5. alias and persistence tests on temporary directories;
+6. fake `NpuDriver` for lifecycle and concurrency;
+7. separate native smoke tests for backend/hardware.
 
-I test Java non devono caricare automaticamente le `.so` reali. Iniettare un
-driver fake permette di rendere la suite ripetibile su CI.
+Java tests must not automatically load real `.so` files. Injecting a fake driver allows the test suite to run reliably on CI.
 
-## Checklist prima di consegnare una modifica
+## Checklist Before Submitting a Change
 
-Per modifiche Java o frontend:
+For Java or frontend changes:
 
 ```bash
 mvn test
 git diff --check
 ```
 
-In più, quando applicabile:
+Additionally, when applicable:
 
-- avvio del contesto Spring;
-- apertura dashboard;
-- download/status/delete su directory temporanea;
+- Spring context startup;
+- dashboard opening;
+- download/status/delete on a temporary directory;
 - load/start/generate/stream/stop/unload;
 - `/api/tags`, `/api/ps`, `/api/show`;
-- una richiesta OpenAI non streaming e una SSE;
-- controllo che nessun modello o `.so` generata sia entrato nel commit.
+- one non-streaming OpenAI request and one SSE request;
+- check that no model files or generated `.so` files are included in the commit.
 
-Per modifiche native:
+For native changes:
 
-- build pulita del target;
-- `ldd` senza dipendenze `not found`;
-- simboli JNI presenti;
-- test sul dispositivo target;
-- log di fallback o failure verificati;
-- nessun output simulato scambiato per inferenza reale.
+- clean build of the target;
+- `ldd` check with no `not found` dependencies;
+- JNI symbols present;
+- testing on target hardware;
+- verified fallback or failure logs;
+- ensure no mock output is mistaken for real inference.
 
-## Pulizia
+## Cleanup
 
 ```bash
 tools/cleanup.sh --builds
@@ -336,14 +303,14 @@ tools/cleanup.sh --downloads
 tools/cleanup.sh --all
 ```
 
-`--builds` elimina output CMake, `target` e risorse native generate.
-`--downloads` elimina `.build-tools` e il checkout di `llama.cpp`.
-`--all` combina i due gruppi.
+`--builds` deletes CMake outputs, `target`, and generated native resources.
+`--downloads` deletes `.build-tools` and the `llama.cpp` checkout.
+`--all` combines both groups.
 
-Lo script non elimina:
+The script does not delete:
 
-- modelli;
+- models;
 - `.npuhub/ollama-models.json`;
-- sorgenti `ggml-rocket`;
-- sorgenti `rocket-userspace`;
-- log o configurazioni esterne al repository.
+- `ggml-rocket` sources;
+- `rocket-userspace` sources;
+- logs or configuration files external to the repository.

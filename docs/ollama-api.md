@@ -1,4 +1,4 @@
-# Compatibilità API Ollama e OpenAI
+# Ollama and OpenAI API Compatibility
 
 NPU Hub exposes its control panel and Ollama-compatible API from the same
 Spring Boot process. The default base URL is:
@@ -89,12 +89,12 @@ curl http://localhost:8080/v1/chat/completions \
   -H 'Content-Type: application/json' \
   -d '{
     "model": "unsloth/Phi-4-mini-instruct-GGUF",
-    "messages": [{"role": "user", "content": "Ciao"}],
+    "messages": [{"role": "user", "content": "Hello"}],
     "max_tokens": 64
   }'
 ```
 
-## Runtime behaviour
+## Runtime behavior
 
 The requested model is **not** loaded automatically. Download and load it from
 the control panel, then start the inference API before sending generation
@@ -156,8 +156,8 @@ The runtime knobs are:
 - `NPU_HUB_ROCKET_THREADS_BATCH` (default `5`)
 - `NPU_HUB_ROCKET_MODE=hybrid|strict` (default `hybrid`)
 
-See [Configurazione e operatività](configuration.md) for the complete list,
-path rules and security notes. See [API del control panel](control-api.md) for
+See [Configuration and Operation](configuration.md) for the complete list,
+path rules and security notes. See [Control Panel API](control-api.md) for
 download, load and start/stop requests.
 
 On an 8 GB Orange Pi 5, do not enable `ROCKET_QUANT_RESIDENT=auto` for
