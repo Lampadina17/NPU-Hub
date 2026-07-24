@@ -21,3 +21,5 @@ Llama3.2-*-qairt-v68/
 /workers/rocket/build/
 /.rocket-runtime/
 /.build-tools/
+/.cargo/
+/.idea/
