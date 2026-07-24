@@ -1,0 +1,23 @@
+# Rust build output
+/target/
+apps/server/target/
+apps/control/node_modules/
+apps/control/dist/
+apps/control/.vite/
+apps/control/.cache/
+apps/control/coverage/
+apps/control/src-tauri/target/
+apps/control/src-tauri/gen/
+apps/control/*.tsbuildinfo
+tools/xtask/target/
+
+# Downloaded NPU model bundles are large and hardware-specific
+Llama3.2-*-qairt-v68/
+
+# Local runtime artifacts
+*.log
+/workers/openvino/build/
+/workers/ryzenai/build/
+/workers/rocket/build/
+/.rocket-runtime/
+/.build-tools/

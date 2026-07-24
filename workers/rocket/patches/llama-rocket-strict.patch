@@ -1,0 +1,33 @@
+diff --git a/ggml/src/ggml-backend.cpp b/ggml/src/ggml-backend.cpp
+--- a/ggml/src/ggml-backend.cpp
++++ b/ggml/src/ggml-backend.cpp
+@@ -1542,6 +1542,29 @@ static enum ggml_status ggml_backend_sched_compute_splits(ggml_backend_sched_t s
+     GGML_ASSERT(sched);
+     struct ggml_backend_sched_split * splits = sched->splits;
+ 
++    // ROCKET_STRICT is the backend's fail-closed guarantee for operations it
++    // claims. It must not reject ordinary CPU glue operations (GET_ROWS,
++    // normalization, sampling, etc.) that Rocket deliberately does not claim.
++    // Whole-graph NPU-only execution is a separate diagnostic policy because
++    // current language-model graphs cannot satisfy it.
++    const char * rocket_whole_graph_strict = getenv("ROCKET_WHOLE_GRAPH_STRICT");
++    if (rocket_whole_graph_strict != NULL && atoi(rocket_whole_graph_strict) > 0) {
++        for (int split_id = 0; split_id < sched->n_splits; split_id++) {
++            const struct ggml_backend_sched_split * split = &splits[split_id];
++            ggml_backend_t split_backend = sched->backends[split->backend_id];
++
++            if (split->graph.n_nodes > 0 &&
++                strcmp(ggml_backend_dev_name(ggml_backend_get_device(split_backend)), "ROCKET") != 0) {
++                const struct ggml_tensor * first_node = split->graph.nodes[0];
++                GGML_LOG_ERROR("%s: ROCKET_WHOLE_GRAPH_STRICT=1 rejected non-ROCKET split %d with %d node(s) "
++                               "(first op: %s, tensor: %s); only Rocket NPU graph execution is allowed\n",
++                        __func__, split_id, split->graph.n_nodes,
++                        ggml_op_name(first_node->op), first_node->name);
++                return GGML_STATUS_FAILED;
++            }
++        }
++    }
++
+     ggml_tensor * prev_ids_tensor = nullptr;
+     std::vector<int32_t> ids;
+     std::vector<ggml_bitset_t> used_ids;
