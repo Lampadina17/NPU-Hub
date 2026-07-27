@@ -1279,6 +1279,39 @@ textarea:focus-visible {
     padding-top: 8px;
 }
 
+.model-list-section {
+    margin-top: 30px;
+}
+
+.model-list-section:first-child {
+    margin-top: 8px;
+}
+
+.model-list-header {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 0 2px 10px;
+    border-bottom: 1px solid var(--line-strong);
+}
+
+.model-list-header h2 {
+    color: var(--ink);
+    font-size: 18px;
+    font-weight: 800;
+}
+
+.model-list-header span {
+    color: var(--ink-muted);
+    font: 700 8px/1 var(--font-mono);
+    letter-spacing: 0.12em;
+}
+
+.model-list-section[hidden] {
+    display: none;
+}
+
 .model-group {
     margin-top: 36px;
 }
@@ -1522,35 +1555,36 @@ textarea:focus-visible {
 }
 
 .model-actions {
-    display: flex;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 7px;
     padding-top: 16px;
     border-top: 1px solid var(--line);
 }
 
-.model-actions .btn:first-child {
-    flex: 1;
-}
+    .model-actions .btn {
+        width: 100%;
+    }
 
-.model-card[data-backend="ROCKCHIP"] .model-actions {
-    display: grid;
-    grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.2fr);
-}
+    .model-actions .btn:disabled {
+        display: none;
+    }
 
-.model-card[data-backend="ROCKCHIP"] .model-actions .btn {
-    width: 100%;
-}
+.model-actions button[data-action="load"] { order: 1; }
+.model-actions button[data-action="unload"] { order: 2; }
+.model-actions button[data-action="download"] { order: 3; }
+.model-actions button[data-action="delete"] { order: 4; }
 
-.model-card[data-backend="ROCKCHIP"] .model-actions .btn-delete {
+.model-actions .btn-delete {
     grid-column: 1 / -1;
 }
 
 @container (max-width: 380px) {
-    .model-card[data-backend="ROCKCHIP"] .model-actions {
+    .model-actions {
         grid-template-columns: 1fr;
     }
 
-    .model-card[data-backend="ROCKCHIP"] .model-actions .btn-delete {
+    .model-actions .btn-delete {
         grid-column: 1;
     }
 }
@@ -3126,6 +3160,29 @@ body.view-chat-active .header-title .subtitle {
         padding-left: 16px;
     }
 
+    .top-header {
+        align-items: flex-start;
+        flex-direction: column;
+        gap: 20px;
+    }
+
+    .header-actions {
+        width: 100%;
+        justify-content: flex-start;
+        flex-wrap: wrap;
+    }
+
+    .api-control-card {
+        max-width: 100%;
+        min-width: 0;
+    }
+
+    .api-control-state,
+    .api-control-endpoint {
+        min-width: 0;
+    }
+
+
     .command-banner {
         grid-template-columns: 1fr;
         gap: 30px;
@@ -3332,6 +3389,29 @@ body.view-chat-active .header-title .subtitle {
         align-self: flex-end;
     }
 
+    .top-header {
+        align-items: flex-start;
+        flex-direction: column;
+        gap: 20px;
+    }
+
+    .header-actions {
+        width: 100%;
+        justify-content: flex-start;
+        flex-wrap: wrap;
+    }
+
+    .api-control-card {
+        max-width: 100%;
+        min-width: 0;
+    }
+
+    .api-control-state,
+    .api-control-endpoint {
+        min-width: 0;
+    }
+
+
     .command-banner {
         min-height: 420px;
         margin-right: -16px;
@@ -3517,16 +3597,20 @@ body.view-chat-active .header-title .subtitle {
         flex-direction: column;
     }
 
-    .model-card[data-backend="ROCKCHIP"] .model-actions {
+    .model-actions {
         grid-template-columns: 1fr;
     }
 
-    .model-card[data-backend="ROCKCHIP"] .model-actions .btn-delete {
+    .model-actions .btn-delete {
         grid-column: 1;
     }
 
     .model-actions .btn {
         width: 100%;
+    }
+
+    .model-actions .btn:disabled {
+        display: none;
     }
 
     .chat-toolbar {
@@ -3695,6 +3779,7 @@ body.view-chat-active .header-title .subtitle {
         flex-direction: column;
         align-items: flex-start;
     }
+
     .onboarding-arrow {
         display: none;
     }
@@ -3776,4 +3861,15 @@ body.view-chat-active .header-title .subtitle {
     display: flex;
     flex-direction: column;
     gap: 24px;
+}
+
+.progress-section.operation-progress .progress-bar-fill {
+    width: 35%;
+    background: var(--accent);
+    animation: model-operation-progress 1.15s ease-in-out infinite;
+}
+
+@keyframes model-operation-progress {
+    0% { transform: translateX(-115%); }
+    100% { transform: translateX(285%); }
 }

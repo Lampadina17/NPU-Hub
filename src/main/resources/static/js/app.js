@@ -14,10 +14,18 @@ document.addEventListener('DOMContentLoaded', () => {
         const target = e.target.closest('.chat-messages, .terminal-body') || document.scrollingElement;
         const clampedY = Math.sign(e.deltaY) * Math.min(absY, MAX_PX);
         const clampedX = Math.sign(e.deltaX) * Math.min(absX, MAX_PX);
-        target.scrollBy({ left: clampedX, top: clampedY });
-    }, { passive: false });
+        target.scrollBy({left: clampedX, top: clampedY});
+    }, {passive: false});
 
     initUIElements();
+    organizeModelLists();
+    window.addEventListener("error", event => {
+        reportClientError(event.error || event.message, "window error");
+    });
+    window.addEventListener("unhandledrejection", event => {
+        reportClientError(event.reason, "unhandled promise rejection");
+    });
+    document.querySelectorAll(".ollama-endpoint").forEach(element => { element.textContent = window.location.origin; });
     initChat();
     const requestedTab = window.location.hash.slice(1);
     if (['dashboard', 'models', 'chat', 'settings'].includes(requestedTab)) {
@@ -65,9 +73,9 @@ document.addEventListener('DOMContentLoaded', () => {
         const quantization = card?.querySelector('.model-quantization-select')?.value || null;
 
         if (action === 'load') {
-            loadModel(modelId, backend, quantization);
+            loadModel(modelId, backend, quantization, card);
         } else if (action === 'unload') {
-            unloadModel();
+            unloadModel(card);
         } else if (action === 'delete') {
             deleteModel(modelId, quantization);
         } else if (action === 'download') {
@@ -94,7 +102,7 @@ let chatModelLimitsName = '';
 let inferenceApiEnabled = false;
 let telemetryRequestInFlight = false;
 
-const BACKEND_PRIORITY = ['ROCKCHIP', 'OPENVINO', 'QUALCOMM', 'RYZENAI'];
+const BACKEND_PRIORITY = ['OPENVINO', 'RYZENAI', 'ROCKCHIP', 'QUALCOMM'];
 
 function isKnownBackend(backend) {
     return BACKEND_PRIORITY.includes(String(backend || '').toUpperCase());
@@ -171,7 +179,14 @@ function initUIElements() {
     }
 }
 
+function reportClientError(error, context = "client error", notify = true) {
+    const message = error instanceof Error ? error.message : String(error || "Unknown error");
+    console.error(`[${context}]`, error);
+    if (notify && message) showToast(message, "error");
+}
+
 function showToast(message, type = 'success') {
+    message = String(message || "Unknown error");
     const toast = document.createElement('div');
     toast.className = `toast toast-${type}`;
 
@@ -203,8 +218,14 @@ function showConfirm(title, message) {
             btnCancel.removeEventListener('click', onCancel);
         };
 
-        const onOk = () => { cleanup(); resolve(true); };
-        const onCancel = () => { cleanup(); resolve(false); };
+        const onOk = () => {
+            cleanup();
+            resolve(true);
+        };
+        const onCancel = () => {
+            cleanup();
+            resolve(false);
+        };
 
         btnOk.addEventListener('click', onOk);
         btnCancel.addEventListener('click', onCancel);
@@ -271,12 +292,17 @@ function initChat() {
     const input = document.getElementById('chat-input');
     const messages = document.getElementById('chat-messages');
     const clearButton = document.getElementById('chat-clear');
-    const stopButton = document.getElementById('chat-stop');
     const modelSelect = document.getElementById('chat-model');
 
     if (!form || !input || !messages) return;
 
     form.addEventListener('submit', sendChatMessage);
+    document.getElementById("chat-send")?.addEventListener("click", event => {
+        if (chatAbortController) {
+            event.preventDefault();
+            chatAbortController.abort();
+        }
+    });
     input.addEventListener('input', () => {
         const count = document.getElementById('chat-character-count');
         if (count) count.textContent = `${input.value.length} chars`;
@@ -297,7 +323,6 @@ function initChat() {
         input.focus();
     });
     clearButton?.addEventListener('click', clearChatConversation);
-    stopButton?.addEventListener('click', () => chatAbortController?.abort());
     modelSelect?.addEventListener('change', () => {
         applyChatModelLimits();
         updateChatModelState();
@@ -521,18 +546,18 @@ function updateChatModelState() {
     stateLabel.textContent = !inferenceApiEnabled
         ? 'API STOPPED'
         : !selected
-        ? 'NO MODEL'
-        : loaded
-            ? 'ON NPU'
-            : 'LOAD REQUIRED';
+            ? 'NO MODEL'
+            : loaded
+                ? 'ON NPU'
+                : 'LOAD REQUIRED';
     state.title = !inferenceApiEnabled
         ? 'Start the inference API from the control panel'
         : !selected
-        ? 'No downloaded model found'
-        : loaded
-            ? 'Loaded on NPU and ready to stream'
-            : 'Load this model manually from the Models page before chatting';
-    if (sendButton) sendButton.disabled = !ready || Boolean(chatAbortController);
+            ? 'No downloaded model found'
+            : loaded
+                ? 'Loaded on NPU and ready to stream'
+                : 'Load this model manually from the Models page before chatting';
+    if (sendButton) sendButton.disabled = Boolean(chatAbortController) ? false : !ready;
 }
 
 async function refreshInferenceApiState() {
@@ -565,6 +590,7 @@ async function refreshInferenceApiState() {
         document.getElementById('chat-api-state')?.classList.toggle('is-error', !inferenceApiEnabled);
         updateChatModelState();
     } catch (error) {
+        reportClientError(error, "frontend operation", false);
         console.warn('Unable to read inference API state:', error);
         inferenceApiEnabled = false;
         const toggle = document.getElementById('api-toggle');
@@ -603,6 +629,7 @@ async function toggleInferenceApi() {
         inferenceApiEnabled = Boolean(data.enabled);
         showToast(inferenceApiEnabled ? 'Inference API started' : 'Inference API stopped', 'success');
     } catch (error) {
+        reportClientError(error, "frontend operation", false);
         showToast(error.message, 'error');
     } finally {
         refreshInferenceApiState();
@@ -626,20 +653,22 @@ function setChatSessionState(mode, label) {
 }
 
 function setChatGenerating(generating) {
-    const select = document.getElementById('chat-model');
-    const sendButton = document.getElementById('chat-send');
-    const stopButton = document.getElementById('chat-stop');
-    const clearButton = document.getElementById('chat-clear');
+    const select = document.getElementById("chat-model");
+    const sendButton = document.getElementById("chat-send");
+    const clearButton = document.getElementById("chat-clear");
     if (select) select.disabled = generating;
     if (sendButton) {
-        sendButton.disabled = generating
-            || !select?.value
-            || !inferenceApiEnabled
-            || select.value !== chatLoadedModelName;
+        sendButton.disabled = generating ? false : !select?.value || !inferenceApiEnabled || select.value !== chatLoadedModelName;
+        sendButton.classList.toggle("btn-primary", !generating);
+        sendButton.classList.toggle("btn-secondary", generating);
+        sendButton.classList.toggle("chat-stop-btn", generating);
+        sendButton.setAttribute("aria-label", generating ? "Stop generation" : "Send message");
+        sendButton.innerHTML = generating
+            ? '<span class="stop-square" aria-hidden="true"></span><span>Stop</span>'
+            : '<span>Send to NPU</span><svg viewBox="0 0 24 24" width="15" height="15" stroke="currentColor" stroke-width="2" fill="none" aria-hidden="true"><path d="M22 2 11 13"></path><path d="m22 2-7 20-4-9-9-4Z"></path></svg>';
     }
-    if (stopButton) stopButton.hidden = !generating;
     if (clearButton) clearButton.disabled = generating;
-    if (generating) setChatSessionState('generating', 'GENERATING');
+    if (generating) setChatSessionState("generating", "GENERATING");
 }
 
 function renderChatMarkdown(element, markdown) {
@@ -858,6 +887,7 @@ async function sendChatMessage(event) {
         setChatSessionState('ready', 'READY');
         updateChatModelState();
     } catch (error) {
+        reportClientError(error, "frontend operation", false);
         assistant?.row.classList.remove('is-streaming');
         if (error.name === 'AbortError') {
             if (assistantText) {
@@ -937,9 +967,9 @@ async function fetchHardwareAndStatus() {
             }
 
             if (backendSelectionMode === 'AUTO'
-                    && activeNpu !== 'No NPU Online'
-                    && !unsupportedPlatform
-                    && activeNpu !== currentActiveNpu) {
+                && activeNpu !== 'No NPU Online'
+                && !unsupportedPlatform
+                && activeNpu !== currentActiveNpu) {
                 currentActiveNpu = activeNpu;
                 applyTheme(currentActiveNpu);
             }
@@ -1072,6 +1102,7 @@ async function fetchTelemetry() {
         updateMemoryMetric(diag);
         updateInferenceMetrics(diag);
     } catch (error) {
+        reportClientError(error, "frontend operation", false);
         console.error('Error fetching live telemetry:', error);
     } finally {
         telemetryRequestInFlight = false;
@@ -1090,19 +1121,117 @@ async function fetchModels() {
     }
 }
 
+function organizeModelLists(models = []) {
+    const root = document.getElementById("models-container");
+    if (!root) return;
+
+    const cards = Array.from(root.querySelectorAll(".model-card"));
+    if (!cards.length) return;
+    cards.forEach((card, index) => {
+        if (card.dataset.catalogIndex === undefined) card.dataset.catalogIndex = String(index);
+    });
+
+    const states = new Map((Array.isArray(models) ? models : []).map(model => [String(model.id), model]));
+    const labels = {
+        ROCKCHIP: "Rockchip NPU",
+        OPENVINO: "Intel OpenVINO",
+        QUALCOMM: "Qualcomm QAIRT",
+        RYZENAI: "AMD Ryzen AI"
+    };
+    const backends = ["ROCKCHIP", "OPENVINO", "QUALCOMM", "RYZENAI"];
+
+    if (root.dataset.listsInitialized !== "true") {
+        root.innerHTML = "";
+        [
+            ["downloaded", "Downloaded models"],
+            ["available", "Available for download"]
+        ].forEach(([kind, title]) => {
+            const section = document.createElement("section");
+            section.className = "model-list-section";
+            section.dataset.modelList = kind;
+            section.innerHTML = "<header class=\"model-list-header\"><h2>" + title + "</h2><span></span></header><div class=\"model-list-groups\"></div>";
+            root.appendChild(section);
+        });
+        root.dataset.listsInitialized = "true";
+    }
+
+    const buckets = {downloaded: new Map(), available: new Map()};
+    cards.sort((a, b) => Number(a.dataset.catalogIndex) - Number(b.dataset.catalogIndex));
+    cards.forEach(card => {
+        const state = states.get(String(card.dataset.modelId));
+        const downloaded = state ? Boolean(state.downloaded) : card.dataset.downloaded === "true";
+        card.dataset.downloaded = String(downloaded);
+        const kind = downloaded ? "downloaded" : "available";
+        const backend = String(card.dataset.backend || "").toUpperCase();
+        if (!buckets[kind].has(backend)) buckets[kind].set(backend, []);
+        buckets[kind].get(backend).push(card);
+    });
+
+    ["downloaded", "available"].forEach(kind => {
+        const section = root.querySelector("[data-model-list=\"" + kind + "\"]");
+        const groupsRoot = section.querySelector(".model-list-groups");
+        groupsRoot.innerHTML = "";
+        let total = 0;
+        backends.forEach(backend => {
+            const groupCards = buckets[kind].get(backend) || [];
+            if (!groupCards.length) return;
+            total += groupCards.length;
+            const group = document.createElement("section");
+            group.className = "model-group";
+            group.innerHTML = "<header class=\"model-group-header\"><div><span class=\"runtime-marker\"></span><h3>" + (labels[backend] || backend) + "</h3></div><span>" + groupCards.length + " MODELS</span></header><div class=\"models-grid\"></div>";
+            const grid = group.querySelector(".models-grid");
+            groupCards.forEach(card => grid.appendChild(card));
+            groupsRoot.appendChild(group);
+        });
+        section.hidden = total === 0;
+        const count = section.querySelector(".model-list-header span");
+        if (count) count.textContent = total + (total === 1 ? " MODEL" : " MODELS");
+    });
+}
+
 function updateModelsDOM(models) {
     models.forEach(m => {
         const card = document.querySelector(`.model-card[data-model-id="${m.id}"]`);
         if (!card) return;
 
         if (card.querySelector('.model-quantization-select')) {
+            card.classList.toggle('active-model', Boolean(m.loaded));
+            const badge = card.querySelector('.badge');
+            if (badge) {
+                if (m.loaded) {
+                    badge.textContent = 'LOADED';
+                    badge.className = 'badge badge-primary';
+                } else if (m.downloaded) {
+                    badge.textContent = 'LOCAL';
+                    badge.className = 'badge badge-primary';
+                } else {
+                    badge.textContent = (m.id.startsWith('OpenVINO/') || m.id.startsWith('unsloth/')) ? 'HUGGING FACE' : 'MODEL SCOPE';
+                    badge.className = 'badge';
+                }
+            }
             refreshRockchipQuantizationCard(card);
             return;
         }
 
+        // Update card active class and badge
+        card.classList.toggle('active-model', Boolean(m.loaded));
+        const badge = card.querySelector('.badge');
+        if (badge) {
+            if (m.loaded) {
+                badge.textContent = 'LOADED';
+                badge.className = 'badge badge-primary';
+            } else if (m.downloaded) {
+                badge.textContent = 'LOCAL';
+                badge.className = 'badge badge-primary';
+            } else {
+                badge.textContent = (m.id.startsWith('OpenVINO/') || m.id.startsWith('unsloth/')) ? 'HUGGING FACE' : 'MODEL SCOPE';
+                badge.className = 'badge';
+            }
+        }
+
         // Update progress if downloading
         const progressSection = card.querySelector('.progress-section');
-        if (progressSection) {
+        if (progressSection && !progressSection.classList.contains("operation-progress")) {
             if (m.downloadStatus === 'DOWNLOADING') {
                 progressSection.style.display = 'block';
                 const bar = progressSection.querySelector('.progress-bar-fill');
@@ -1114,11 +1243,47 @@ function updateModelsDOM(models) {
             }
         }
 
-        // When downloaded status changes, we might want to reload the page to get the updated Thymeleaf actions
-        if (m.downloaded && card.querySelector('.btn-primary') && card.querySelector('.btn-primary').innerText.includes('Download')) {
-            window.location.reload();
+        // Update action buttons dynamically
+        const loadBtn = card.querySelector('button[data-action="load"]');
+        if (loadBtn) {
+            loadBtn.disabled = !m.downloaded || m.loaded;
+            loadBtn.className = m.loaded ? 'btn btn-secondary' : 'btn btn-primary';
+            const span = loadBtn.querySelector('span');
+            if (span) span.textContent = m.loaded ? 'Loaded on NPU' : 'Load on NPU';
+        }
+
+        let unloadBtn = card.querySelector('button[data-action="unload"]');
+        if (m.loaded) {
+            if (!unloadBtn) {
+                unloadBtn = document.createElement('button');
+                unloadBtn.className = 'btn btn-secondary';
+                unloadBtn.type = 'button';
+                unloadBtn.dataset.action = 'unload';
+                unloadBtn.innerHTML = '<span>Unload from NPU</span>';
+                if (loadBtn) {
+                    loadBtn.after(unloadBtn);
+                } else {
+                    card.querySelector('.model-actions')?.appendChild(unloadBtn);
+                }
+            }
+        } else if (unloadBtn) {
+            unloadBtn.remove();
+        }
+
+        const deleteBtn = card.querySelector('button[data-action="delete"]');
+        if (deleteBtn) {
+            deleteBtn.disabled = !m.downloaded || m.loaded;
+        }
+
+        const downloadBtn = card.querySelector('button[data-action="download"]');
+        if (downloadBtn) {
+            downloadBtn.disabled = false;
+            downloadBtn.hidden = false;
+            const span = downloadBtn.querySelector('span');
+            if (span) span.textContent = m.downloaded ? 'Re-download' : 'Download model';
         }
     });
+    organizeModelLists(models);
 }
 
 function refreshRockchipQuantizationCards() {
@@ -1146,69 +1311,87 @@ async function refreshRockchipQuantizationCard(card) {
         const query = new URLSearchParams({modelId, quantization});
         const response = await fetch(`/api/v1/control/models/download/status?${query}`);
         const data = await response.json();
-        if (!response.ok) throw new Error(data.error || 'Unable to inspect selected quantization');
+        if (!response.ok) throw new Error(data.error || "Unable to inspect selected quantization");
 
-        const downloading = data.status === 'DOWNLOADING';
+        const downloading = data.status === "DOWNLOADING";
         const local = Boolean(data.isDownloaded);
 
-        state?.classList.toggle('is-local', local);
-        state?.classList.toggle('is-downloading', downloading);
-        state?.classList.toggle('is-error', data.status === 'FAILED');
+        state?.classList.toggle("is-local", local);
+        state?.classList.toggle("is-downloading", downloading);
+        state?.classList.toggle("is-error", data.status === "FAILED");
         if (stateLabel) {
             stateLabel.textContent = downloading
                 ? `${quantization} · downloading ${Number(data.progress).toFixed(1)}%`
                 : local
                     ? `${quantization} is available locally`
-                    : data.status === 'FAILED'
+                    : data.status === "FAILED"
                         ? `${quantization} download failed`
                         : `${quantization} is not downloaded`;
         }
 
         if (loadButton) loadButton.disabled = !local || downloading;
         if (deleteButton) {
-            deleteButton.disabled = !local || downloading || card.classList.contains('active-model');
+            deleteButton.disabled = !local || downloading || card.classList.contains("active-model");
         }
         if (downloadButton) downloadButton.disabled = downloading;
         if (downloadLabel) {
             downloadLabel.textContent = downloading
-                ? 'Downloading selected…'
-                : local ? 'Re-download selected' : 'Download selected';
+                ? "Downloading selected…"
+                : local ? "Re-download selected" : "Download selected";
         }
 
-        if (progressSection) {
-            progressSection.style.display = downloading ? 'block' : 'none';
-            const bar = progressSection.querySelector('.progress-bar-fill');
-            const text = progressSection.querySelector('.progress-bar-text');
+        if (progressSection && !progressSection.classList.contains("operation-progress")) {
+            progressSection.style.display = downloading ? "block" : "none";
+            const bar = progressSection.querySelector(".progress-bar-fill");
+            const text = progressSection.querySelector(".progress-bar-text");
             if (bar) bar.style.width = `${data.progress}%`;
             if (text) text.innerText = `${Number(data.progress).toFixed(1)}% completed`;
         }
     } catch (error) {
-        state?.classList.add('is-error');
+        reportClientError(error, "frontend operation", false);
+        state?.classList.add("is-error");
         if (stateLabel) stateLabel.textContent = error.message;
+    }
+}
+
+ function setModelOperationProgress(card, operation) {
+    if (!card) return;
+    const section = card.querySelector(".progress-section");
+    const bar = section?.querySelector(".progress-bar-fill");
+    const text = section?.querySelector(".progress-bar-text");
+    if (!section) return;
+    const active = Boolean(operation);
+    section.classList.toggle("operation-progress", active);
+    section.style.display = active ? "block" : "none";
+    if (active) {
+        if (bar) bar.style.width = "35%";
+        if (text) text.textContent = operation === "load" ? "Loading model on NPU…" : "Unloading model from NPU…";
+        card.querySelectorAll(".model-actions button").forEach(button => { button.disabled = true; });
+    } else {
+        if (bar) bar.style.width = "0";
+        if (text) text.textContent = "0.0% completed";
     }
 }
 
 async function downloadFromSource(modelId, quantization = null) {
     try {
         toggleTerminalDrawer(true);
-        const resp = await fetch('/api/v1/control/models/download', {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({modelId, quantization})
+        const resp = await fetch("/api/v1/control/models/download", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ modelId, quantization })
         });
         const data = await resp.json();
-        if (!resp.ok) throw new Error(data.error || 'Unable to start model download');
+        if (!resp.ok) throw new Error(data.error || "Unable to start model download");
         showToast(
             quantization
-                ? `Downloading only ${quantization} for ${modelId}`
-                : `Downloading ${modelId}`,
-            'success'
+                ? "Downloading only " + quantization + " for " + modelId
+                : "Downloading " + modelId,
+            "success"
         );
-        // Immediately trigger a UI refresh to show the progress bar state
         fetchModels();
     } catch (err) {
-        console.error('Error starting download:', err);
-        showToast(err.message, 'error');
+        reportClientError(err, "model download");
     }
 }
 
@@ -1221,14 +1404,14 @@ async function deleteModel(modelId, quantization = null) {
     if (!confirmed) return;
 
     try {
-        const resp = await fetch('/api/v1/control/models/delete', {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({modelId, quantization})
+        const resp = await fetch("/api/v1/control/models/delete", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ modelId, quantization })
         });
         const data = await resp.json();
         if (resp.ok) {
-            showToast(`${target} deleted`, 'success');
+            showToast(`Deleted ${target}`, 'success');
             fetchModels();
         } else {
             throw new Error(data.error || `Unable to delete ${target}`);
@@ -1239,7 +1422,7 @@ async function deleteModel(modelId, quantization = null) {
     }
 }
 
-async function loadModel(modelId, preferredBackend, quantization = null) {
+async function loadModel(modelId, preferredBackend, quantization = null, card = null) {
     try {
         const activeCard = document.querySelector('.model-card.active-model');
         const activeModelId = activeCard?.dataset.modelId || '';
@@ -1248,14 +1431,18 @@ async function loadModel(modelId, preferredBackend, quantization = null) {
                 `Model ${activeModelId} is already loaded. Replace it with ${modelId}?`
             );
             if (!replace) return;
+            setModelOperationProgress(activeCard, "unload");
 
             const unloadResp = await fetch('/api/v1/control/models/unload', {method: 'POST'});
             const unloadData = await unloadResp.json();
             if (!unloadResp.ok) {
+                setModelOperationProgress(activeCard, null);
                 throw new Error(unloadData.error || 'Unable to unload the active model');
             }
+            setModelOperationProgress(activeCard, null);
         }
 
+        setModelOperationProgress(card, "load");
         const resp = await fetch('/api/v1/control/models/load', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
@@ -1265,29 +1452,32 @@ async function loadModel(modelId, preferredBackend, quantization = null) {
         if (resp.ok) {
             const variant = quantization ? ` (${quantization})` : '';
             showToast(`Model ${modelId}${variant} loaded on NPU ${preferredBackend}!`, 'success');
-            // Model cards are server-rendered because their actions depend on
-            // the loaded state. Reload once so Load/Unload is immediately
-            // consistent with the backend state.
-            window.setTimeout(() => window.location.reload(), 350);
+            await fetchModels();
+            await refreshInferenceApiState();
+            setModelOperationProgress(card, null);
         } else {
+            setModelOperationProgress(card, null);
             showToast(data.error || `Error: NPU ${preferredBackend} unavailable`, 'error');
         }
     } catch (err) {
-        console.error(err);
-        showToast(err.message, 'error');
+        setModelOperationProgress(card, null);
+        reportClientError(err, "model load");
     }
 }
 
-async function unloadModel() {
+async function unloadModel(card = null) {
+    setModelOperationProgress(card, "unload");
     try {
-        const resp = await fetch('/api/v1/control/models/unload', { method: 'POST' });
+        const resp = await fetch('/api/v1/control/models/unload', {method: 'POST'});
         const data = await resp.json();
         if (!resp.ok) throw new Error(data.error || 'Unable to unload the active model');
         showToast('Model unloaded from NPU', 'success');
-        window.setTimeout(() => window.location.reload(), 350);
+        setModelOperationProgress(card, null);
+        await fetchModels();
+        await refreshInferenceApiState();
     } catch (err) {
-        console.error('Error unloading model:', err);
-        showToast(err.message, 'error');
+        setModelOperationProgress(card, null);
+        reportClientError(err, "model unload");
     }
 }
 
@@ -1385,7 +1575,7 @@ async function saveSettings() {
 async function triggerIntelDriverInstall() {
     try {
         toggleTerminalDrawer(true);
-        const resp = await fetch('/api/v1/control/setup/intel-driver', { method: 'POST' });
+        const resp = await fetch('/api/v1/control/setup/intel-driver', {method: 'POST'});
         if (resp.ok) {
             showToast('Started Intel NPU Driver Installation task...', 'success');
             pollSetupTask('intel-driver', 'btn-setup-intel-driver');
@@ -1400,8 +1590,8 @@ async function triggerWorkerBuild(workerType) {
         toggleTerminalDrawer(true);
         const resp = await fetch('/api/v1/control/setup/build-worker', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ workerType })
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({workerType})
         });
         if (resp.ok) {
             showToast(`Started build task for ${workerType} worker...`, 'success');
@@ -1415,7 +1605,7 @@ async function triggerWorkerBuild(workerType) {
 async function triggerModelScopeInstall() {
     try {
         toggleTerminalDrawer(true);
-        const resp = await fetch('/api/v1/control/setup/modelscope', { method: 'POST' });
+        const resp = await fetch('/api/v1/control/setup/modelscope', {method: 'POST'});
         if (resp.ok) {
             showToast('Started ModelScope CLI installation...', 'success');
             pollSetupTask('modelscope-setup', 'btn-setup-modelscope');
@@ -1424,6 +1614,7 @@ async function triggerModelScopeInstall() {
         showToast('Error starting ModelScope installation', 'error');
     }
 }
+
 
 function pollSetupTask(taskId, btnId) {
     const btn = document.getElementById(btnId);

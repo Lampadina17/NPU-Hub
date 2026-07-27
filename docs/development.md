@@ -119,6 +119,10 @@ cmake -S workers/openvino -B workers/openvino/build \
 cmake --build workers/openvino/build --parallel
 ```
 
+When building the worker from the control panel, set `OpenVINOGenAI_DIR`,
+`OPENVINO_GENAI_DIR`, `OpenVINO_DIR`, or `CMAKE_PREFIX_PATH` in the environment
+of the NPU Hub process. These values are forwarded to CMake automatically.
+
 The post-build step copies `libnpu_openvino_jni.so` into `native/build`. To bundle it into the JAR, it must be intentionally copied to `src/main/resources/native/libnpu_openvino_jni.so` before running `mvn package`. Also ensure that OpenVINO dependencies are accessible to the dynamic linker at runtime.
 
 `tools/build-all.sh` recompiles generic adapters and may overwrite this file with the stub. Do not run both build workflows blindly.

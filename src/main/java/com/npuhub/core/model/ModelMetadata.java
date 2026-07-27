@@ -13,4 +13,5 @@ public record ModelMetadata(
         boolean downloaded,
         String downloadStatus,
         Double downloadProgress
-) {}
+) {
+}

@@ -20,6 +20,7 @@ Llama3.2-*-qairt-v68/
 /workers/ryzenai/build/
 /workers/rocket/build/
 /.rocket-runtime/
+/.openvino-sdk/
 /.build-tools/
 /.cargo/
 /.idea/

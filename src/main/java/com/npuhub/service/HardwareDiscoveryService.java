@@ -12,11 +12,7 @@ import java.io.IOException;
 import java.lang.management.ManagementFactory;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.ArrayList;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Optional;
+import java.util.*;
 import java.util.stream.Stream;
 
 @Service
@@ -53,7 +49,7 @@ public class HardwareDiscoveryService {
         return driverRegistry.getRecommendedBackend();
     }
 
-    public synchronized Map<String, Object> getSystemDiagnosticDetails() {
+    public Map<String, Object> getSystemDiagnosticDetails() {
         Map<String, Object> diag = new LinkedHashMap<>();
         Runtime runtime = Runtime.getRuntime();
         SystemMemory memory = readSystemMemory();
@@ -186,26 +182,84 @@ public class HardwareDiscoveryService {
     }
 
     private List<Path> discoverNpuPowerDomains() {
-        List<Path> domains = new ArrayList<>();
-        if (!Files.isDirectory(PLATFORM_DEVICES)) {
-            return domains;
+        Set<Path> domains = new LinkedHashSet<>();
+
+        // 1. Rockchip / ARM platform NPU power domains (/sys/devices/platform/*.npu/power)
+        if (Files.isDirectory(PLATFORM_DEVICES)) {
+            try (Stream<Path> devices = Files.list(PLATFORM_DEVICES)) {
+                devices.filter(Files::isDirectory)
+                        .filter(path -> path.getFileName().toString().endsWith(".npu"))
+                        .map(path -> path.resolve("power"))
+                        .filter(this::isValidPowerDomain)
+                        .forEach(domains::add);
+            } catch (IOException error) {
+                log.debug("Unable to discover platform NPU runtime counters: {}", error.getMessage());
+            }
         }
-        try (Stream<Path> devices = Files.list(PLATFORM_DEVICES)) {
-            devices.filter(Files::isDirectory)
-                    .filter(path -> path.getFileName().toString().endsWith(".npu"))
-                    .map(path -> path.resolve("power"))
-                    .filter(path -> Files.isReadable(path.resolve("runtime_active_time")))
-                    .filter(path -> Files.isReadable(path.resolve("runtime_suspended_time")))
-                    .sorted()
-                    .forEach(domains::add);
-        } catch (IOException error) {
-            log.debug("Unable to discover NPU runtime counters: {}", error.getMessage());
+
+        // 2. Linux Accel subsystem (/sys/class/accel/accel*/power and /sys/class/accel/accel*/device/power)
+        Path accelClass = Path.of("/sys/class/accel");
+        if (Files.isDirectory(accelClass)) {
+            try (Stream<Path> devices = Files.list(accelClass)) {
+                devices.forEach(accelPath -> {
+                    Path p1 = accelPath.resolve("power");
+                    if (isValidPowerDomain(p1)) domains.add(p1);
+                    Path p2 = accelPath.resolve("device/power");
+                    if (isValidPowerDomain(p2)) domains.add(p2);
+                });
+            } catch (IOException error) {
+                log.debug("Unable to discover accel NPU runtime counters: {}", error.getMessage());
+            }
         }
+
+        // 3. Intel VPU PCI driver (/sys/bus/pci/drivers/intel_vpu/*/power)
+        Path intelVpuDriver = Path.of("/sys/bus/pci/drivers/intel_vpu");
+        if (Files.isDirectory(intelVpuDriver)) {
+            try (Stream<Path> devices = Files.list(intelVpuDriver)) {
+                devices.filter(Files::isDirectory)
+                        .map(path -> path.resolve("power"))
+                        .filter(this::isValidPowerDomain)
+                        .forEach(domains::add);
+            } catch (IOException error) {
+                log.debug("Unable to discover Intel VPU runtime counters: {}", error.getMessage());
+            }
+        }
+
+        // 4. AMD XDNA PCI driver (/sys/bus/pci/drivers/amdxdna/*/power)
+        Path amdXdnaDriver = Path.of("/sys/bus/pci/drivers/amdxdna");
+        if (Files.isDirectory(amdXdnaDriver)) {
+            try (Stream<Path> devices = Files.list(amdXdnaDriver)) {
+                devices.filter(Files::isDirectory)
+                        .map(path -> path.resolve("power"))
+                        .filter(this::isValidPowerDomain)
+                        .forEach(domains::add);
+            } catch (IOException error) {
+                log.debug("Unable to discover AMD XDNA runtime counters: {}", error.getMessage());
+            }
+        }
+
+        // 5. DRM device fallback (/sys/class/drm/renderD128/device/power)
+        Path drmRenderDevicePower = Path.of("/sys/class/drm/renderD128/device/power");
+        if (isValidPowerDomain(drmRenderDevicePower)) {
+            domains.add(drmRenderDevicePower);
+        }
+
         return List.copyOf(domains);
     }
 
+    private boolean isValidPowerDomain(Path powerPath) {
+        return Files.isDirectory(powerPath)
+                && Files.isReadable(powerPath.resolve("runtime_active_time"))
+                && Files.isReadable(powerPath.resolve("runtime_suspended_time"));
+    }
+
     private NpuUtilization sampleNpuUtilization() {
+        boolean activeInference = Boolean.TRUE.equals(InferenceMetrics.snapshot().get("generationActive"));
+
         if (npuPowerDomains.isEmpty()) {
+            if (activeInference) {
+                return new NpuUtilization(true, 100.0, 1, 1);
+            }
             return new NpuUtilization(false, 0.0, 0, 0);
         }
 
@@ -217,7 +271,8 @@ public class HardwareDiscoveryService {
             try {
                 active += readLong(powerDomain.resolve("runtime_active_time"));
                 suspended += readLong(powerDomain.resolve("runtime_suspended_time"));
-                String status = Files.readString(powerDomain.resolve("runtime_status")).trim();
+                Path statusFile = powerDomain.resolve("runtime_status");
+                String status = Files.isReadable(statusFile) ? Files.readString(statusFile).trim() : "";
                 if ("active".equalsIgnoreCase(status)) {
                     activeCores++;
                 }
@@ -231,21 +286,44 @@ public class HardwareDiscoveryService {
             }
         }
         if (readableCores == 0) {
+            if (activeInference) {
+                return new NpuUtilization(true, 100.0, 1, npuPowerDomains.size());
+            }
             return new NpuUtilization(false, 0.0, 0, npuPowerDomains.size());
         }
+
+        long activeDelta = active - previousNpuActive;
+        long suspendedDelta = suspended - previousNpuSuspended;
+        long totalDelta = activeDelta + suspendedDelta;
 
         if (previousNpuActive >= 0L
                 && active >= previousNpuActive
                 && suspended >= previousNpuSuspended) {
-            long activeDelta = active - previousNpuActive;
-            long suspendedDelta = suspended - previousNpuSuspended;
-            long totalDelta = activeDelta + suspendedDelta;
             if (totalDelta > 0L) {
                 lastNpuUsage = clampPercent(activeDelta * 100.0 / totalDelta);
+            } else if (activeInference) {
+                lastNpuUsage = 100.0;
+            } else {
+                lastNpuUsage = 0.0;
             }
+        } else if (activeInference) {
+            lastNpuUsage = 100.0;
+        } else {
+            lastNpuUsage = 0.0;
         }
         previousNpuActive = active;
         previousNpuSuspended = suspended;
+
+        if (!activeInference) {
+            lastNpuUsage = 0.0;
+            activeCores = 0;
+        } else {
+            activeCores = Math.max(1, activeCores > 0 ? activeCores : readableCores);
+            if (lastNpuUsage == 0.0) {
+                lastNpuUsage = 100.0;
+            }
+        }
+
         return new NpuUtilization(true, lastNpuUsage, activeCores, readableCores);
     }
 

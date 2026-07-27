@@ -17,9 +17,13 @@ public class RyzenAiNativeBridge {
     }
 
     public static native boolean nativeCheckXdnaAvailable();
+
     public static native boolean nativeLoadOnnxGenieModel(String modelPath, int contextWindow);
+
     public static native boolean nativeUnloadOnnxGenieModel();
+
     public static native String nativeGenerateOnnxGenie(String prompt, double temperature, double topP, int maxTokens);
+
     public static native void nativeGenerateOnnxGenieStream(String prompt, double temperature, double topP, int maxTokens, StreamCallback callback);
 
     @FunctionalInterface

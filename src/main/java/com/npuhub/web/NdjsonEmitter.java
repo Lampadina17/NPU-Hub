@@ -17,6 +17,10 @@ public final class NdjsonEmitter extends ResponseBodyEmitter {
     }
 
     public synchronized void sendJson(Object value) throws IOException {
-        send(objectMapper.writeValueAsString(value) + "\n", NDJSON);
+        try {
+            send(objectMapper.writeValueAsString(value) + "\n", NDJSON);
+        } catch (IllegalStateException e) {
+            // Emitter has already completed or client connection closed
+        }
     }
 }

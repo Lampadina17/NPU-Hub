@@ -1,6 +1,7 @@
 package com.npuhub.web.dto;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
+
 import java.util.Map;
 
 public record OllamaGenerateRequest(
@@ -12,4 +13,5 @@ public record OllamaGenerateRequest(
         @JsonProperty("stream") Boolean stream,
         @JsonProperty("raw") Boolean raw,
         @JsonProperty("options") Map<String, Object> options
-) {}
+) {
+}

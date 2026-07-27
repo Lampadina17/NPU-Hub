@@ -12,4 +12,5 @@ public record OllamaGenerateResponse(
         @JsonProperty("prompt_eval_count") Integer promptEvalCount,
         @JsonProperty("eval_count") Integer evalCount,
         @JsonProperty("eval_duration") Long evalDurationNs
-) {}
+) {
+}

@@ -1,5 +1,5 @@
 server:
-  port: ${SERVER_PORT:8080}
+  port: ${SERVER_PORT:11434}
 
 spring:
   application:
@@ -16,7 +16,7 @@ npu:
     compatibility-version: 0.20.0-npuhub.17
     default-context: 4096
     minimum-loaded-context: 4096
-    default-max-tokens: 512
+    default-max-tokens: 4096
     default-keep-alive: -1
     keep-alive-scan-ms: 1000
 

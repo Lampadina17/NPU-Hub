@@ -8,4 +8,5 @@ public record HardwareInfo(
         int computeCores,
         String driverVersion,
         String statusDetails
-) {}
+) {
+}

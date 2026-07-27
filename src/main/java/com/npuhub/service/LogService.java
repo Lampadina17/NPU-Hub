@@ -42,5 +42,6 @@ public class LogService {
         return result;
     }
 
-    public record LogEntry(long id, String timestamp, String level, String message) {}
+    public record LogEntry(long id, String timestamp, String level, String message) {
+    }
 }

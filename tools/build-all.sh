@@ -203,3 +203,4 @@ log "Building and testing the complete Spring Boot application"
 "${maven_command}" -f "${npuhub_root}/pom.xml" clean package
 
 log "Complete: ${npuhub_root}/target/npu-hub-1.0.0-SNAPSHOT.jar"
+log "Run: java -jar target/npu-hub-1.0.0-SNAPSHOT.jar"

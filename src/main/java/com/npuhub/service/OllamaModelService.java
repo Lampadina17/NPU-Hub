@@ -18,16 +18,7 @@ import java.nio.file.StandardCopyOption;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.Instant;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.Comparator;
-import java.util.LinkedHashMap;
-import java.util.LinkedHashSet;
-import java.util.List;
-import java.util.Locale;
-import java.util.Map;
-import java.util.Optional;
-import java.util.Set;
+import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
 @Service
@@ -291,31 +282,31 @@ public class OllamaModelService {
         ModelDefinition sourceDefinition = sourceDescriptor.definition();
         ModelDefinition copied = sourceDefinition == null
                 ? new ModelDefinition(
-                        destination.trim(),
-                        sourceDescriptor.name(),
-                        "",
-                        "",
-                        "",
-                        List.of(),
-                        "",
-                        Map.of(),
-                        List.of(),
-                        "",
-                        System.currentTimeMillis()
-                )
+                destination.trim(),
+                sourceDescriptor.name(),
+                "",
+                "",
+                "",
+                List.of(),
+                "",
+                Map.of(),
+                List.of(),
+                "",
+                System.currentTimeMillis()
+        )
                 : new ModelDefinition(
-                        destination.trim(),
-                        sourceDefinition.from(),
-                        sourceDefinition.template(),
-                        sourceDefinition.renderer(),
-                        sourceDefinition.parser(),
-                        sourceDefinition.license(),
-                        sourceDefinition.system(),
-                        sourceDefinition.parameters(),
-                        sourceDefinition.messages(),
-                        sourceDefinition.quantize(),
-                        System.currentTimeMillis()
-                );
+                destination.trim(),
+                sourceDefinition.from(),
+                sourceDefinition.template(),
+                sourceDefinition.renderer(),
+                sourceDefinition.parser(),
+                sourceDefinition.license(),
+                sourceDefinition.system(),
+                sourceDefinition.parameters(),
+                sourceDefinition.messages(),
+                sourceDefinition.quantize(),
+                System.currentTimeMillis()
+        );
         aliases.put(copied.model(), copied);
         persistAliases();
         return copied;
@@ -443,15 +434,15 @@ public class OllamaModelService {
                 isGguf(descriptor.file())
                         ? GgufMetadataReader.readMetadata(descriptor.file(), verbose).orElseGet(Map::of)
                         : Map.of(
-                                "general.architecture",
-                                descriptor.metadata().architecture() == null
-                                        ? "unknown"
-                                        : descriptor.metadata().architecture(),
-                                "general.parameter_count",
-                                descriptor.metadata().parameterCount() == null
-                                        ? 0L
-                                        : descriptor.metadata().parameterCount()
-                        )
+                        "general.architecture",
+                        descriptor.metadata().architecture() == null
+                        ? "unknown"
+                        : descriptor.metadata().architecture(),
+                        "general.parameter_count",
+                        descriptor.metadata().parameterCount() == null
+                        ? 0L
+                        : descriptor.metadata().parameterCount()
+                )
         );
         response.put("capabilities", List.of("completion"));
         response.put("modified_at", Instant.ofEpochMilli(lastModified(descriptor)).toString());

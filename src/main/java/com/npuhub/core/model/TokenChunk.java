@@ -5,4 +5,5 @@ public record TokenChunk(
         String token,
         boolean done,
         double currentTokensPerSecond
-) {}
+) {
+}

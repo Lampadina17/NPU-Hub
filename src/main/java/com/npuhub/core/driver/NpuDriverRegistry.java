@@ -66,19 +66,26 @@ public class NpuDriverRegistry {
         boolean armLike = osArch.contains("aarch64") || osArch.contains("arm64") || osArch.startsWith("arm");
 
         boolean hasRyzenAiDevice = new java.io.File("/dev/amdxdna").exists();
-        boolean hasRockchipDevice = new java.io.File("/dev/accel/accel0").exists();
         boolean hasQualcommDevice = new java.io.File("/dev/kgsl-3d0").exists();
 
-        if (hasRyzenAiDevice || amd64Like) {
+        if (amd64Like) {
+            if (hasRyzenAiDevice) {
+                return List.of(
+                        BackendType.RYZENAI,
+                        BackendType.OPENVINO,
+                        BackendType.ROCKCHIP,
+                        BackendType.QUALCOMM
+                );
+            }
             return List.of(
-                    BackendType.RYZENAI,
                     BackendType.OPENVINO,
+                    BackendType.RYZENAI,
                     BackendType.ROCKCHIP,
                     BackendType.QUALCOMM
             );
         }
 
-        if (hasRockchipDevice || armLike) {
+        if (armLike) {
             return List.of(
                     BackendType.ROCKCHIP,
                     BackendType.QUALCOMM,
@@ -108,13 +115,13 @@ public class NpuDriverRegistry {
         if (preferredBackend != null && !preferredBackend.isBlank() && !"auto".equalsIgnoreCase(preferredBackend)) {
             for (NpuDriver driver : drivers.values()) {
                 if (driver.getBackendType().name().equalsIgnoreCase(preferredBackend) ||
-                    driver.getBackendType().getDisplayName().toLowerCase().contains(preferredBackend.toLowerCase())) {
-                    
+                        driver.getBackendType().getDisplayName().toLowerCase().contains(preferredBackend.toLowerCase())) {
+
                     if (driver.isAvailable()) {
                         log.info("NPU-Only Policy: Selected explicit backend {}", driver.getBackendType());
                         return driver;
                     } else {
-                        throw new IllegalStateException("NPU-Only Policy Error: Explicitly requested NPU backend '" 
+                        throw new IllegalStateException("NPU-Only Policy Error: Explicitly requested NPU backend '"
                                 + preferredBackend + "' is NOT available or failed hardware healthcheck!");
                     }
                 }

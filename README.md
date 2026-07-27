@@ -74,7 +74,7 @@ Start for control panel and API development:
 mvn spring-boot:run
 ```
 
-The control panel will be available at `http://localhost:8080`. Without a supported NPU
+The control panel will be available at `http://localhost:11434`. Without a supported NPU
 and a real native library, you can inspect the interface, but real inference cannot be executed.
 
 ### Full Rockchip Build

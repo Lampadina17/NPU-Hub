@@ -6,11 +6,14 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.Map;
 
 @RestControllerAdvice
 public class OllamaApiExceptionHandler {
+    private static final Logger log = LoggerFactory.getLogger(OllamaApiExceptionHandler.class);
     @ExceptionHandler(HttpMessageNotReadableException.class)
     public ResponseEntity<Object> malformedJson(
             HttpMessageNotReadableException error,
@@ -44,6 +47,12 @@ public class OllamaApiExceptionHandler {
             HttpServletRequest request
     ) {
         return response(HttpStatus.INTERNAL_SERVER_ERROR, safeMessage(error), request);
+    }
+
+    @ExceptionHandler(Exception.class)
+    public ResponseEntity<Object> unexpected(Exception error, HttpServletRequest request) {
+        log.error("Unhandled API error on {} {}", request.getMethod(), request.getRequestURI(), error);
+        return response(HttpStatus.INTERNAL_SERVER_ERROR, "internal server error", request);
     }
 
     private ResponseEntity<Object> response(

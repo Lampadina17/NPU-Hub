@@ -28,10 +28,10 @@ public class RyzenAiNpuDriver implements NpuDriver {
         String statusDetails = avail
                 ? "Ready for inference through Ryzen AI; XDNA acceleration is available"
                 : (!deviceExists
-                        ? "AMD XDNA NPU not detected; requires a Ryzen AI system and the XDNA driver/runtime"
-                        : (!loaded
-                                ? "AMD XDNA NPU detected, but the Ryzen AI JNI runtime is not loaded"
-                                : "AMD XDNA NPU detected, but the Ryzen AI runtime could not initialize it"));
+                   ? "AMD XDNA NPU not detected; requires a Ryzen AI system and the XDNA driver/runtime"
+                   : (!loaded
+                      ? "AMD XDNA NPU detected, but the Ryzen AI JNI runtime is not loaded"
+                      : "AMD XDNA NPU detected, but the Ryzen AI runtime could not initialize it"));
         return new HardwareInfo(
                 BackendType.RYZENAI,
                 "AMD Ryzen AI XDNA NPU",
@@ -46,7 +46,7 @@ public class RyzenAiNpuDriver implements NpuDriver {
     @Override
     public boolean isAvailable() {
         return new java.io.File("/dev/amdxdna").exists() &&
-               RyzenAiNativeBridge.isLibraryLoaded() && RyzenAiNativeBridge.nativeCheckXdnaAvailable();
+                RyzenAiNativeBridge.isLibraryLoaded() && RyzenAiNativeBridge.nativeCheckXdnaAvailable();
     }
 
     @Override

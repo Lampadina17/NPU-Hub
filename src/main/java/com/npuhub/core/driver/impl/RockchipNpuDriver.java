@@ -36,18 +36,19 @@ public class RockchipNpuDriver implements NpuDriver {
 
     @Override
     public HardwareInfo probeHardware() {
-        boolean loaded = RockchipNativeBridge.isLibraryLoaded();
-        boolean accel0Present = new File("/dev/accel/accel0").exists();
+        boolean isRockchip = isRockchipHardware();
+        boolean loaded = isRockchip && RockchipNativeBridge.isLibraryLoaded();
+        boolean accel0Present = isRockchip && new File("/dev/accel/accel0").exists();
         boolean accelAvailable = loaded && (accel0Present || RockchipNativeBridge.nativeCheckAccel0Available());
         String version = accelAvailable ? RockchipNativeBridge.nativeGetRknnVersion() : "N/A";
         String statusDetails = accelAvailable
                 ? "Ready for compatible GGUF models through Rocket; hardware acceleration is available"
                 : (!accel0Present
-                        ? "Rockchip NPU not detected; /dev/accel/accel0 is missing"
-                        : (!loaded
-                                ? "Rockchip NPU detected, but the Rocket JNI runtime is not loaded"
-                                : "Rockchip NPU detected, but the accelerator health check failed"));
-        
+                   ? "Rockchip NPU not detected; /dev/accel/accel0 is missing"
+                   : (!loaded
+                      ? "Rockchip NPU detected, but the Rocket JNI runtime is not loaded"
+                      : "Rockchip NPU detected, but the accelerator health check failed"));
+
         return new HardwareInfo(
                 BackendType.ROCKCHIP,
                 "Rockchip Rocket Mainline Tri-Core NPU",
@@ -61,8 +62,28 @@ public class RockchipNpuDriver implements NpuDriver {
 
     @Override
     public boolean isAvailable() {
+        if (!isRockchipHardware()) return false;
         boolean accel0Present = new File("/dev/accel/accel0").exists();
         return RockchipNativeBridge.isLibraryLoaded() && (accel0Present || RockchipNativeBridge.nativeCheckAccel0Available());
+    }
+
+    private boolean isRockchipHardware() {
+        String arch = System.getProperty("os.arch", "").toLowerCase();
+        boolean armLike = arch.contains("aarch64") || arch.contains("arm64") || arch.startsWith("arm");
+        if (!armLike) {
+            return false;
+        }
+        File accelVendor = new File("/sys/class/accel/accel0/device/vendor");
+        if (accelVendor.exists()) {
+            try {
+                String vendor = java.nio.file.Files.readString(accelVendor.toPath()).trim().toLowerCase();
+                if ("0x8086".equals(vendor)) {
+                    return false;
+                }
+            } catch (Exception ignored) {
+            }
+        }
+        return true;
     }
 
     @Override
@@ -87,7 +108,7 @@ public class RockchipNpuDriver implements NpuDriver {
     }
 
     @Override
-    public synchronized InferenceResponse generate(InferenceRequest request) {
+    public InferenceResponse generate(InferenceRequest request) {
         if (!isAvailable()) {
             throw new IllegalStateException(
                     "Mainline Rocket NPU device /dev/accel/accel0 is not ready"
@@ -142,7 +163,7 @@ public class RockchipNpuDriver implements NpuDriver {
     }
 
     @Override
-    public synchronized void generateStream(InferenceRequest request, Consumer<TokenChunk> tokenConsumer) {
+    public void generateStream(InferenceRequest request, Consumer<TokenChunk> tokenConsumer) {
         if (!isAvailable()) {
             throw new IllegalStateException(
                     "Mainline Rocket NPU device /dev/accel/accel0 is not ready"

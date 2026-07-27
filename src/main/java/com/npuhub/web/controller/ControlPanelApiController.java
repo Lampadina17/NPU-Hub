@@ -1,15 +1,11 @@
 package com.npuhub.web.controller;
 
+import com.npuhub.core.model.BackendType;
 import com.npuhub.core.model.HardwareInfo;
 import com.npuhub.core.model.ModelMetadata;
-import com.npuhub.core.model.BackendType;
-import com.npuhub.service.HardwareDiscoveryService;
-import com.npuhub.service.InferenceApiStateService;
-import com.npuhub.service.LogService;
-import com.npuhub.service.ModelManagementService;
-import com.npuhub.service.ModelScopeDownloaderService;
-import com.npuhub.service.SettingsService;
-import com.npuhub.service.SetupService;
+import com.npuhub.service.*;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -22,6 +18,7 @@ import java.util.Map;
 @RequestMapping("/api/v1/control")
 @CrossOrigin(origins = "*")
 public class ControlPanelApiController {
+    private static final Logger log = LoggerFactory.getLogger(ControlPanelApiController.class);
     private final HardwareDiscoveryService hardwareDiscoveryService;
     private final ModelManagementService modelManagementService;
     private final SettingsService settingsService;
@@ -34,13 +31,13 @@ public class ControlPanelApiController {
     private final LogService logService;
     private final InferenceApiStateService inferenceApiStateService;
 
-    public ControlPanelApiController(HardwareDiscoveryService hardwareDiscoveryService, 
-                                    ModelManagementService modelManagementService,
-                                    SettingsService settingsService,
-                                    ModelScopeDownloaderService modelScopeDownloaderService,
-                                    SetupService setupService,
-                                    LogService logService,
-                                    InferenceApiStateService inferenceApiStateService) {
+    public ControlPanelApiController(HardwareDiscoveryService hardwareDiscoveryService,
+                                     ModelManagementService modelManagementService,
+                                     SettingsService settingsService,
+                                     ModelScopeDownloaderService modelScopeDownloaderService,
+                                     SetupService setupService,
+                                     LogService logService,
+                                     InferenceApiStateService inferenceApiStateService) {
         this.hardwareDiscoveryService = hardwareDiscoveryService;
         this.modelManagementService = modelManagementService;
         this.settingsService = settingsService;
@@ -114,7 +111,7 @@ public class ControlPanelApiController {
                     "error", e.getMessage()
             ));
         }
-        
+
         Map<String, Object> resp = new HashMap<>();
         resp.put("success", ok);
         resp.put("modelId", modelId);
@@ -195,7 +192,7 @@ public class ControlPanelApiController {
                 modelsDirectoryPath,
                 quantization
         );
-        
+
         Map<String, Object> response = new HashMap<>();
         response.put("modelId", modelId);
         response.put("status", isLocal ? "COMPLETED" : status);
@@ -291,6 +288,12 @@ public class ControlPanelApiController {
     public ResponseEntity<Map<String, Object>> installModelScope() {
         setupService.installModelScopeAsync();
         return ResponseEntity.ok(Map.of("status", "STARTED", "taskId", "modelscope-setup"));
+    }
+
+    @PostMapping("/setup/openvino-sdk")
+    public ResponseEntity<Map<String, Object>> installOpenVinoSdk() {
+        setupService.installOpenVinoSdkAsync();
+        return ResponseEntity.ok(Map.of("status", "STARTED", "taskId", "openvino-sdk"));
     }
 
     @GetMapping("/setup/status")

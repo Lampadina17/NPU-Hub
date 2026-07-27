@@ -13,14 +13,7 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
 import java.io.File;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Comparator;
-import java.util.List;
-import java.util.Locale;
-import java.util.Map;
-import java.util.Optional;
-import java.util.OptionalInt;
+import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
 @Service
@@ -496,10 +489,10 @@ public class ModelManagementService {
             String available = availableFiles == null
                     ? "none"
                     : Arrays.stream(availableFiles)
-                            .map(File::getName)
-                            .sorted()
-                            .reduce((left, right) -> left + ", " + right)
-                            .orElse("none");
+                      .map(File::getName)
+                      .sorted()
+                      .reduce((left, right) -> left + ", " + right)
+                      .orElse("none");
             throw new IllegalArgumentException(
                     "GGUF quantization " + quantization + " is not downloaded in "
                             + configured.getAbsolutePath() + ". Available: " + available
@@ -580,7 +573,7 @@ public class ModelManagementService {
     public List<ModelMetadata> listModelsForActiveNpu() {
         NpuDriver activeDriver = driverRegistry.selectActiveDriver("auto");
         BackendType activeBackend = activeDriver.getBackendType();
-        
+
         List<ModelMetadata> filtered = new ArrayList<>();
         for (ModelMetadata m : registeredModels.values()) {
             if (m.compatibleBackend() == activeBackend) {
@@ -588,7 +581,7 @@ public class ModelManagementService {
                 boolean downloaded = checkDownloaded(m.id());
                 String status = downloaderService != null ? downloaderService.getStatus(m.id()) : "IDLE";
                 Double progress = downloaderService != null ? downloaderService.getProgress(m.id()) : 0.0;
-                
+
                 filtered.add(new ModelMetadata(m.id(), m.name(), m.path(), m.architecture(), m.quantization(), m.parameterCount(), resolveModelContextWindow(m), m.compatibleBackend(), loaded, downloaded, status, progress));
             }
         }
@@ -609,7 +602,7 @@ public class ModelManagementService {
                         String folderName = f.getName();
                         boolean alreadyRegistered = registeredModels.keySet().stream()
                                 .anyMatch(id -> getFolderName(id).equals(folderName));
-                        
+
                         if (!alreadyRegistered) {
                             String id = folderName.contains("-ov") ? "OpenVINO/" + folderName : "radxa/" + folderName;
                             registeredModels.put(id, new ModelMetadata(
@@ -638,7 +631,7 @@ public class ModelManagementService {
             boolean downloaded = checkDownloaded(m.id());
             String status = downloaderService != null ? downloaderService.getStatus(m.id()) : "IDLE";
             Double progress = downloaderService != null ? downloaderService.getProgress(m.id()) : 0.0;
-                
+
             list.add(new ModelMetadata(m.id(), m.name(), m.path(), m.architecture(), m.quantization(), m.parameterCount(), resolveModelContextWindow(m), m.compatibleBackend(), loaded, downloaded, status, progress));
         }
         list.sort(Comparator.comparing(ModelMetadata::name));
@@ -668,7 +661,7 @@ public class ModelManagementService {
         NpuDriver driver = driverRegistry.selectActiveDriver(preferredBackend != null ? preferredBackend : metadata.compatibleBackend().name());
         String quantization = driver.getBackendType() == BackendType.ROCKCHIP
                 ? normalizeRockchipQuantization(
-                        requestedQuantization == null ? metadata.quantization() : requestedQuantization)
+                requestedQuantization == null ? metadata.quantization() : requestedQuantization)
                 : null;
         String modelPath = quantization == null
                 ? metadata.path()
@@ -692,10 +685,11 @@ public class ModelManagementService {
         }
 
         if (currentlyLoadedModelId != null) {
-            throw new IllegalStateException(
-                    "Model '" + currentlyLoadedModelId
-                            + "' is already loaded. Unload it before loading another model."
-            );
+            log.info("Auto-unloading currently active model '{}' before loading '{}'", currentlyLoadedModelId, metadata.id());
+            boolean unloaded = unloadCurrentModel();
+            if (!unloaded) {
+                log.warn("Failed to auto-unload currently active model '{}'", currentlyLoadedModelId);
+            }
         }
 
         boolean success = driver.loadModel(modelPath, contextWindow);
@@ -721,9 +715,9 @@ public class ModelManagementService {
         NpuDriver driver = currentlyLoadedBackend == null
                 ? driverRegistry.selectActiveDriver("auto")
                 : driverRegistry.getDriver(currentlyLoadedBackend)
-                        .orElseThrow(() -> new IllegalStateException(
-                                "Loaded NPU backend " + currentlyLoadedBackend + " is no longer registered"
-                        ));
+                  .orElseThrow(() -> new IllegalStateException(
+                          "Loaded NPU backend " + currentlyLoadedBackend + " is no longer registered"
+                  ));
         boolean success = driver.unloadModel();
         if (success) {
             clearLoadedState();
@@ -817,7 +811,7 @@ public class ModelManagementService {
         String folderName = getFolderName(modelId);
         File targetDir = new File(modelsDirectoryPath, folderName);
         log.info("Deleting local model directory: {}", targetDir.getAbsolutePath());
-        
+
         if (currentlyLoadedModelId != null && currentlyLoadedModelId.contains(folderName)) {
             unloadCurrentModel();
         }

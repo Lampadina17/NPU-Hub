@@ -13,13 +13,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.nio.charset.StandardCharsets;
-import java.util.ArrayList;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Locale;
-import java.util.Map;
-import java.util.UUID;
-import java.util.Optional;
+import java.util.*;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Consumer;
 
@@ -34,7 +28,7 @@ public class OllamaInferenceFacade {
     @Value("${npu.ollama.default-context:4096}")
     private int defaultContextWindow;
 
-    @Value("${npu.ollama.default-max-tokens:512}")
+    @Value("${npu.ollama.default-max-tokens:4096}")
     private int defaultMaxTokens;
 
     @Value("${npu.ollama.default-keep-alive:5m}")
@@ -312,7 +306,7 @@ public class OllamaInferenceFacade {
         try {
             if (text.endsWith("ms")) {
                 return Math.max(0L, Math.round(Double.parseDouble(
-                        text.substring(0, text.length() - 2)))); 
+                        text.substring(0, text.length() - 2))));
             }
             if (text.endsWith("h")) {
                 return durationValue(text, 3_600_000.0);

@@ -28,10 +28,10 @@ public class QualcommNpuDriver implements NpuDriver {
         String statusDetails = avail
                 ? "Ready for inference through QAIRT/Genie on the Hexagon NPU"
                 : (!deviceExists
-                        ? "Qualcomm accelerator not detected; requires a supported Snapdragon/Dragonwing platform and QAIRT"
-                        : (!loaded
-                                ? "Qualcomm accelerator detected, but the QAIRT/Genie JNI runtime is not loaded"
-                                : "Qualcomm accelerator detected, but QAIRT/Genie could not initialize the Hexagon NPU"));
+                   ? "Qualcomm accelerator not detected; requires a supported Snapdragon/Dragonwing platform and QAIRT"
+                   : (!loaded
+                      ? "Qualcomm accelerator detected, but the QAIRT/Genie JNI runtime is not loaded"
+                      : "Qualcomm accelerator detected, but QAIRT/Genie could not initialize the Hexagon NPU"));
         return new HardwareInfo(
                 BackendType.QUALCOMM,
                 "Qualcomm QAIRT Hexagon NPU",
@@ -46,7 +46,7 @@ public class QualcommNpuDriver implements NpuDriver {
     @Override
     public boolean isAvailable() {
         return new java.io.File("/dev/kgsl-3d0").exists() &&
-               QualcommNativeBridge.isLibraryLoaded() && QualcommNativeBridge.nativeCheckGenieAvailable();
+                QualcommNativeBridge.isLibraryLoaded() && QualcommNativeBridge.nativeCheckGenieAvailable();
     }
 
     @Override

@@ -17,9 +17,13 @@ public class QualcommNativeBridge {
     }
 
     public static native boolean nativeCheckGenieAvailable();
+
     public static native boolean nativeLoadGenieModel(String modelPath, int contextWindow);
+
     public static native boolean nativeUnloadGenieModel();
+
     public static native String nativeGenerateGenie(String prompt, double temperature, double topP, int maxTokens);
+
     public static native void nativeGenerateGenieStream(String prompt, double temperature, double topP, int maxTokens, StreamCallback callback);
 
     @FunctionalInterface

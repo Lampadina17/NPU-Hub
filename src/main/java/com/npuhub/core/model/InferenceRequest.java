@@ -18,4 +18,5 @@ public record InferenceRequest(
         double frequencyPenalty,
         double presencePenalty,
         boolean stream
-) {}
+) {
+}

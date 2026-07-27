@@ -18,10 +18,15 @@ public class RockchipNativeBridge {
 
     // Native JNI functions implemented in C++ (libnpu_rockchip_jni.so)
     public static native boolean nativeCheckAccel0Available();
+
     public static native String nativeGetRknnVersion();
+
     public static native void nativeSetLogCallback(NativeLogCallback callback);
+
     public static native boolean nativeLoadRocketModel(String modelPath, int contextWindow);
+
     public static native boolean nativeUnloadRocketModel();
+
     public static native String nativeGenerateRocket(
             String prompt,
             double temperature,
@@ -35,6 +40,7 @@ public class RockchipNativeBridge {
             double frequencyPenalty,
             double presencePenalty
     );
+
     public static native void nativeGenerateRocketStream(
             String prompt,
             double temperature,

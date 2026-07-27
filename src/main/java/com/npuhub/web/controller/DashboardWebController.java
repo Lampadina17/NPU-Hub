@@ -1,7 +1,7 @@
 package com.npuhub.web.controller;
 
-import com.npuhub.service.ModelManagementService;
 import com.npuhub.service.HardwareDiscoveryService;
+import com.npuhub.service.ModelManagementService;
 import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -20,13 +20,13 @@ public class DashboardWebController {
     @GetMapping("/")
     public String dashboard(Model model) {
         var allModels = modelManagementService.listAllModels();
-        
+
         java.util.Map<String, java.util.List<com.npuhub.core.model.ModelMetadata>> groupedModels = new java.util.LinkedHashMap<>();
         groupedModels.put("ROCKCHIP", new java.util.ArrayList<>());
         groupedModels.put("OPENVINO", new java.util.ArrayList<>());
         groupedModels.put("QUALCOMM", new java.util.ArrayList<>());
         groupedModels.put("RYZENAI", new java.util.ArrayList<>());
-        
+
         for (var m : allModels) {
             String backend = m.compatibleBackend().name();
             groupedModels.computeIfAbsent(backend, k -> new java.util.ArrayList<>()).add(m);

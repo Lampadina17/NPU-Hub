@@ -116,7 +116,7 @@ public class ModelScopeDownloaderService {
         String dirName = modelId.contains("/") ? modelId.substring(modelId.lastIndexOf('/') + 1) : modelId;
         File dir = new File(targetDirectory, dirName);
         if (!dir.exists() || !dir.isDirectory()) return false;
-        
+
         File[] files = dir.listFiles();
         if (files == null || files.length == 0) return false;
 
@@ -151,7 +151,7 @@ public class ModelScopeDownloaderService {
         String selection = quantization == null || quantization.isBlank()
                 ? "complete repository"
                 : quantization.trim().toUpperCase(Locale.ROOT);
-        
+
         log.info("Starting {} download for {} into {}", selection, modelId, targetDir.getAbsolutePath());
         logService.addLog("DOWNLOAD", "Starting " + selection + " download for model " + modelId);
         downloadStatus.put(key, "DOWNLOADING");
@@ -167,14 +167,14 @@ public class ModelScopeDownloaderService {
             ProcessBuilder pb = quantization == null || quantization.isBlank()
                     ? new ProcessBuilder("python3", script.getAbsolutePath(), modelId, targetDir.getAbsolutePath())
                     : new ProcessBuilder(
-                            "python3",
-                            script.getAbsolutePath(),
-                            modelId,
-                            targetDir.getAbsolutePath(),
-                            quantization.trim().toUpperCase(Locale.ROOT)
-                    );
+                    "python3",
+                    script.getAbsolutePath(),
+                    modelId,
+                    targetDir.getAbsolutePath(),
+                    quantization.trim().toUpperCase(Locale.ROOT)
+            );
             pb.redirectErrorStream(true);
-            
+
             Process proc = pb.start();
             try (BufferedReader reader = new BufferedReader(new InputStreamReader(proc.getInputStream()))) {
                 String line;
@@ -189,7 +189,8 @@ public class ModelScopeDownloaderService {
                                 double pVal = Double.parseDouble(pStr);
                                 downloadProgress.put(key, pVal);
                             }
-                        } catch (Exception ignored) {}
+                        } catch (Exception ignored) {
+                        }
                     }
                 }
             }

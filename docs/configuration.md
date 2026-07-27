@@ -83,8 +83,12 @@ For real changes, use Spring properties and restart the process. Before making t
 | `NPU_HUB_MAVEN_VERSION` | `3.9.9` | Local Maven downloaded by script |
 | `LLAMA_DIR` | `.rocket-runtime/llama.cpp` | External `llama.cpp` checkout |
 | `RYZEN_AI_INSTALLATION_PATH` | none | Ryzen AI SDK discovery |
+| `OpenVINOGenAI_DIR` | none | OpenVINO GenAI CMake package directory for the OpenVINO worker |
+| `OPENVINO_GENAI_DIR` | none | Alias for `OpenVINOGenAI_DIR` |
+| `OpenVINO_DIR` | none | OpenVINO runtime CMake package directory |
+| `CMAKE_PREFIX_PATH` | none | Additional CMake prefixes, including an OpenVINO SDK install |
 
-`tools/build-all.sh` can download Maven, clone repositories, and update `llama.cpp`; it is not an offline build.
+When none of `OpenVINOGenAI_DIR`, `OPENVINO_GENAI_DIR`, or `CMAKE_PREFIX_PATH` are set, the OpenVINO worker build automatically downloads the OpenVINO GenAI 2025.4 SDK archive from `storage.openvinotoolkit.org`, extracts it under `.openvino-sdk/` in the project root, and passes the resolved path as `CMAKE_PREFIX_PATH` to the CMake configure step. Subsequent builds reuse the cached extraction. The standalone "Setup SDK" button in the control panel triggers only the download and extraction without starting a build.
 
 ## Rocket Runtime Variables
 

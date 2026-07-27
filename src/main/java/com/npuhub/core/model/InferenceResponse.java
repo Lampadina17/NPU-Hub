@@ -10,4 +10,5 @@ public record InferenceResponse(
         double timeToFirstTokenMs,
         long totalExecutionTimeMs,
         BackendType backendUsed
-) {}
+) {
+}

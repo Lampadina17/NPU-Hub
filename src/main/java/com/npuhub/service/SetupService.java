@@ -5,7 +5,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 import java.io.BufferedReader;
-import java.io.File;
+import java.io.IOException;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -30,6 +30,14 @@ public class SetupService {
     private static final String NPU_DRIVER_VERSION = "1.33.0";
     private static final String NPU_DRIVER_BUILD = "20260529-26625960453";
     private static final String LEVEL_ZERO_VERSION = "1.27.0-1~24.04~ppa2";
+
+    private static final String OPENVINO_GENAI_VERSION = "2025.4.0.0";
+    private static final String OPENVINO_GENAI_ARCHIVE =
+            "openvino_genai_ubuntu24_" + OPENVINO_GENAI_VERSION + "_x86_64.tar.gz";
+    private static final String OPENVINO_GENAI_URL =
+            "https://storage.openvinotoolkit.org/repositories/openvino_genai/packages/2025.4/linux/"
+                    + OPENVINO_GENAI_ARCHIVE;
+    private static final String OPENVINO_SDK_DIR_NAME = ".openvino-sdk";
 
     private final Map<String, Double> taskProgress = new ConcurrentHashMap<>();
     private final Map<String, String> taskStatus = new ConcurrentHashMap<>();
@@ -80,8 +88,8 @@ public class SetupService {
                 String pkgSuffix = String.format("%s.%s~ubuntu24.04_amd64.deb", NPU_DRIVER_VERSION, NPU_DRIVER_BUILD);
                 String cmdStr = String.format(
                         "pkexec bash -c 'apt-get update && apt-get install -y libtbb12 %s %s/intel-driver-compiler-npu_%s %s/intel-fw-npu_%s %s/intel-level-zero-npu_%s " +
-                        "&& echo \"SUBSYSTEM==\\\"accel\\\", KERNEL==\\\"accel*\\\", GROUP=\\\"render\\\", MODE=\\\"0660\\\"\" > /etc/udev/rules.d/10-intel-vpu.rules " +
-                        "&& udevadm control --reload-rules && udevadm trigger --subsystem-match=accel && gpasswd --add %s render'",
+                                "&& echo \"SUBSYSTEM==\\\"accel\\\", KERNEL==\\\"accel*\\\", GROUP=\\\"render\\\", MODE=\\\"0660\\\"\" > /etc/udev/rules.d/10-intel-vpu.rules " +
+                                "&& udevadm control --reload-rules && udevadm trigger --subsystem-match=accel && gpasswd --add %s render'",
                         levelZeroFile.toString(), tempDir.toString(), pkgSuffix, tempDir.toString(), pkgSuffix, tempDir.toString(), pkgSuffix, currentUser
                 );
 
@@ -123,6 +131,21 @@ public class SetupService {
                         "-B", buildDir.toString(),
                         "-DCMAKE_BUILD_TYPE=Release"
                 ));
+                if ("openvino".equalsIgnoreCase(workerType)) {
+                    addCMakeEnvironmentArgument(cmakeArguments, "OpenVINOGenAI_DIR", "OpenVINOGenAI_DIR", "OPENVINO_GENAI_DIR");
+                    addCMakeEnvironmentArgument(cmakeArguments, "OpenVINO_DIR", "OpenVINO_DIR");
+                    addCMakeEnvironmentArgument(cmakeArguments, "CMAKE_PREFIX_PATH", "CMAKE_PREFIX_PATH");
+
+                    Path sdkPath = resolveOpenVinoSdkPath(projectRoot, taskId);
+                    if (sdkPath != null) {
+                        boolean alreadyHasPrefix = cmakeArguments.stream()
+                                .anyMatch(a -> a.startsWith("-DCMAKE_PREFIX_PATH="));
+                        if (!alreadyHasPrefix) {
+                            cmakeArguments.add("-DCMAKE_PREFIX_PATH=" + sdkPath);
+                            logService.addLog("BUILD", "Using auto-resolved OpenVINO SDK: " + sdkPath);
+                        }
+                    }
+                }
                 Path llamaDirectory = null;
                 if ("rocket".equalsIgnoreCase(workerType)) {
                     llamaDirectory = resolveLlamaDirectory(projectRoot);
@@ -163,6 +186,18 @@ public class SetupService {
                 taskStatus.put(taskId, "FAILED: " + e.getMessage());
             }
         });
+    }
+
+    private void addCMakeEnvironmentArgument(
+            List<String> cmakeArguments, String cmakeVariable, String... environmentVariables
+    ) {
+        for (String environmentVariable : environmentVariables) {
+            String value = System.getenv(environmentVariable);
+            if (value != null && !value.isBlank()) {
+                cmakeArguments.add("-D" + cmakeVariable + "=" + value);
+                return;
+            }
+        }
     }
 
     private Path resolveLlamaDirectory(Path projectRoot) throws Exception {
@@ -356,6 +391,131 @@ public class SetupService {
         });
     }
 
+    public void installOpenVinoSdkAsync() {
+        String taskId = "openvino-sdk";
+        taskStatus.put(taskId, "RUNNING");
+        taskProgress.put(taskId, 5.0);
+
+        Executors.newSingleThreadExecutor().submit(() -> {
+            try {
+                Path projectRoot = Paths.get(System.getProperty("user.dir", "."))
+                        .toAbsolutePath().normalize();
+                Path result = resolveOpenVinoSdkPath(projectRoot, taskId);
+                if (result != null) {
+                    logService.addLog("BUILD", "OpenVINO GenAI SDK ready at: " + result);
+                } else {
+                    logService.addLog("BUILD", "OpenVINO SDK configured via environment variables");
+                }
+                taskStatus.put(taskId, "COMPLETED");
+                taskProgress.put(taskId, 100.0);
+                log.info("OpenVINO GenAI SDK setup completed.");
+            } catch (Exception e) {
+                log.error("OpenVINO SDK setup failed", e);
+                taskStatus.put(taskId, "FAILED: " + e.getMessage());
+            }
+        });
+    }
+
+    private Path resolveOpenVinoSdkPath(Path projectRoot, String taskId) throws Exception {
+        for (String var : new String[]{"OpenVINOGenAI_DIR", "OPENVINO_GENAI_DIR", "CMAKE_PREFIX_PATH"}) {
+            String value = System.getenv(var);
+            if (value != null && !value.isBlank()) {
+                logService.addLog("BUILD", "OpenVINO SDK location provided by environment: " + var + "=" + value);
+                return null;
+            }
+        }
+
+        Path sdkRoot = projectRoot.resolve(OPENVINO_SDK_DIR_NAME).normalize();
+        Path sdkMarker = sdkRoot.resolve(".sdk-path");
+        if (Files.isRegularFile(sdkMarker)) {
+            String cachedPath = Files.readString(sdkMarker).trim();
+            Path cached = Paths.get(cachedPath);
+            if (Files.isDirectory(cached)) {
+                logService.addLog("BUILD", "Reusing previously downloaded OpenVINO SDK: " + cached);
+                return cached;
+            }
+        }
+
+        downloadAndExtractOpenVinoSdk(sdkRoot, taskId);
+        Path extracted = findSdkDirectory(sdkRoot);
+        Files.writeString(sdkMarker, extracted.toString());
+        return extracted;
+    }
+
+    private void downloadAndExtractOpenVinoSdk(Path sdkRoot, String taskId) throws Exception {
+        Files.createDirectories(sdkRoot);
+        Path archiveFile = sdkRoot.resolve(OPENVINO_GENAI_ARCHIVE);
+
+        if (!Files.isRegularFile(archiveFile) || Files.size(archiveFile) < 1_000_000) {
+            taskStatus.put(taskId, "Downloading OpenVINO GenAI SDK " + OPENVINO_GENAI_VERSION + "...");
+            taskProgress.put(taskId, 20.0);
+            logService.addLog("BUILD", "Downloading " + OPENVINO_GENAI_URL);
+            runCommand(new String[]{
+                    "curl", "-fL", "--retry", "3",
+                    OPENVINO_GENAI_URL, "-o", archiveFile.toString()
+            });
+        } else {
+            logService.addLog("BUILD", "Archive already present, skipping download: " + archiveFile);
+        }
+
+        taskStatus.put(taskId, "Extracting OpenVINO GenAI SDK...");
+        taskProgress.put(taskId, 60.0);
+        logService.addLog("BUILD", "Extracting " + archiveFile.getFileName() + " into " + sdkRoot);
+        runCommand(new String[]{"tar", "-xzf", archiveFile.toString(), "-C", sdkRoot.toString()});
+        taskProgress.put(taskId, 85.0);
+
+        Path installDeps = findFileInTree(sdkRoot, "install_dependencies.sh");
+        if (installDeps != null) {
+            logService.addLog("BUILD", "Running install_dependencies.sh for system libraries");
+            taskStatus.put(taskId, "Installing SDK system dependencies...");
+            try {
+                runCommand(new String[]{"bash", installDeps.toString()});
+            } catch (Exception e) {
+                logService.addLog("BUILD",
+                        "install_dependencies.sh returned non-zero (non-fatal): " + e.getMessage());
+            }
+        }
+    }
+
+    private Path findSdkDirectory(Path sdkRoot) throws IOException {
+        // Return the runtime/cmake directory directly – that is where the
+        // OpenVINOGenAIConfig.cmake and OpenVINOConfig.cmake files live.
+        // CMake's find_package(CONFIG) needs CMAKE_PREFIX_PATH to point at a
+        // directory that contains <Package>Config.cmake; the OpenVINO SDK uses
+        // a non-standard layout (runtime/cmake/) so the SDK root itself does
+        // not work as a prefix path.
+        try (var stream = Files.walk(sdkRoot, 4)) {
+            return stream
+                    .filter(p -> p.getFileName().toString().equals("cmake")
+                            && Files.isDirectory(p)
+                            && p.getParent() != null
+                            && p.getParent().getFileName().toString().equals("runtime"))
+                    .findFirst()
+                    .orElseGet(() -> {
+                        // Fallback: single top-level directory inside sdkRoot
+                        try (var ls = Files.list(sdkRoot)) {
+                            return ls.filter(Files::isDirectory)
+                                    .filter(p -> !p.getFileName().toString().startsWith("."))
+                                    .findFirst()
+                                    .orElse(sdkRoot);
+                        } catch (IOException e) {
+                            return sdkRoot;
+                        }
+                    });
+        }
+    }
+
+    private Path findFileInTree(Path root, String fileName) {
+        try (var stream = Files.walk(root, 3)) {
+            return stream
+                    .filter(p -> p.getFileName().toString().equals(fileName) && Files.isRegularFile(p))
+                    .findFirst()
+                    .orElse(null);
+        } catch (IOException e) {
+            return null;
+        }
+    }
+
     private void runCommand(String[] cmd) throws Exception {
         ProcessBuilder pb = new ProcessBuilder(cmd);
         runProcess(pb);
@@ -378,3 +538,4 @@ public class SetupService {
         }
     }
 }
+
