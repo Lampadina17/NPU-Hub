@@ -1,6 +1,7 @@
 package com.npuhub.core.driver.impl;
 
 import com.npuhub.core.driver.NpuDriver;
+import com.npuhub.core.PlatformDetection;
 import com.npuhub.core.model.*;
 import com.npuhub.jni.rockchip.RockchipNativeBridge;
 import com.npuhub.service.LogService;
@@ -68,6 +69,9 @@ public class RockchipNpuDriver implements NpuDriver {
     }
 
     private boolean isRockchipHardware() {
+        if (PlatformDetection.isRadxaBoard()) {
+            return false;
+        }
         String arch = System.getProperty("os.arch", "").toLowerCase();
         boolean armLike = arch.contains("aarch64") || arch.contains("arm64") || arch.startsWith("arm");
         if (!armLike) {

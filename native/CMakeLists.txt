@@ -43,6 +43,7 @@ endif()
 if(NPU_HUB_BUILD_QUALCOMM_JNI)
     add_library(npu_qualcomm_jni SHARED qualcomm/npu_qualcomm_jni.cpp)
     target_include_directories(npu_qualcomm_jni PRIVATE ${JNI_INCLUDE_DIRS} common)
+    target_link_libraries(npu_qualcomm_jni PRIVATE ${CMAKE_DL_LIBS})
 endif()
 
 # 4. AMD Ryzen AI JNI Shared Library

@@ -9,6 +9,8 @@ import java.io.BufferedReader;
 import java.io.File;
 import java.io.FileNotFoundException;
 import java.io.InputStreamReader;
+import java.io.IOException;
+import java.nio.file.Files;
 import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -117,21 +119,29 @@ public class ModelScopeDownloaderService {
         File dir = new File(targetDirectory, dirName);
         if (!dir.exists() || !dir.isDirectory()) return false;
 
-        File[] files = dir.listFiles();
-        if (files == null || files.length == 0) return false;
-
-        // Verify that total downloaded size is > 50 MB (not just tiny LFS pointers!)
-        long totalBytes = 0;
-        for (File f : files) {
-            if (quantization == null || quantization.isBlank()) {
-                totalBytes += f.length();
-            } else if (f.isFile()
-                    && f.getName().toLowerCase(Locale.ROOT).endsWith(".gguf")
-                    && matchesQuantization(f, quantization)) {
-                totalBytes += f.length();
-            }
+        // ModelScope repositories can contain nested paths. Walk the complete
+        // tree; checking only dir.listFiles() makes a successful download look
+        // unavailable to the WebUI when the model file is in a subdirectory.
+        try (var files = Files.walk(dir.toPath())) {
+            long totalBytes = files
+                    .filter(Files::isRegularFile)
+                    .filter(path -> quantization == null || quantization.isBlank()
+                            || (path.getFileName().toString().toLowerCase(Locale.ROOT).endsWith(".gguf")
+                            && matchesQuantization(path.toFile(), quantization)))
+                    .mapToLong(path -> {
+                        try {
+                            return Files.size(path);
+                        } catch (IOException ignored) {
+                            return 0L;
+                        }
+                    })
+                    .sum();
+            // Verify that total downloaded size is > 50 MB (not just tiny LFS pointers!).
+            return totalBytes > 50 * 1024 * 1024L;
+        } catch (IOException e) {
+            log.warn("Unable to inspect downloaded model directory {}: {}", dir, e.getMessage());
+            return false;
         }
-        return totalBytes > 50 * 1024 * 1024L;
     }
 
     @Async

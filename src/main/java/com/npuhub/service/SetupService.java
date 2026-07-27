@@ -377,13 +377,26 @@ public class SetupService {
 
         Executors.newSingleThreadExecutor().submit(() -> {
             try {
-                taskStatus.put(taskId, "Installing modelscope pip package...");
-                taskProgress.put(taskId, 50.0);
-                runCommand(new String[]{"python3", "-m", "pip", "install", "modelscope"});
+                Path projectRoot = Paths.get(System.getProperty("user.dir", "."))
+                        .toAbsolutePath().normalize();
+                Path virtualEnvironment = projectRoot.resolve(".modelscope-venv");
+                Path venvPython = virtualEnvironment.resolve("bin/python");
+
+                if (!Files.isExecutable(venvPython)) {
+                    taskStatus.put(taskId, "Creating ModelScope Python virtual environment...");
+                    taskProgress.put(taskId, 35.0);
+                    runCommand(new String[]{"python3", "-m", "venv", virtualEnvironment.toString()});
+                }
+
+                taskStatus.put(taskId, "Installing modelscope in the project virtual environment...");
+                taskProgress.put(taskId, 60.0);
+                runCommand(new String[]{
+                        venvPython.toString(), "-m", "pip", "install", "--upgrade", "modelscope"
+                });
 
                 taskStatus.put(taskId, "COMPLETED");
                 taskProgress.put(taskId, 100.0);
-                log.info("ModelScope CLI installed successfully.");
+                log.info("ModelScope CLI installed in {}.", virtualEnvironment);
             } catch (Exception e) {
                 log.error("ModelScope setup failed", e);
                 taskStatus.put(taskId, "FAILED: " + e.getMessage());
@@ -538,4 +551,3 @@ public class SetupService {
         }
     }
 }
-

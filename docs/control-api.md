@@ -193,10 +193,12 @@ Task ID: `build-<workerType>`.
 
 ### `POST /setup/modelscope`
 
-Executes:
+Creates or reuses the project-local `.modelscope-venv` virtual environment and
+installs ModelScope into it:
 
 ```text
-python3 -m pip install modelscope
+python3 -m venv .modelscope-venv
+.modelscope-venv/bin/python -m pip install --upgrade modelscope
 ```
 
 Task ID: `modelscope-setup`.

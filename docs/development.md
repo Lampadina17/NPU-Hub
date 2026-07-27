@@ -74,11 +74,16 @@ This build creates stub libraries useful for testing loading and simple signatur
 
 ### Rockchip Rocket
 
-The supported path for the full build is:
+The supported path for an explicit Rocket build is:
 
 ```bash
-NPU_HUB_BUILD_JOBS=2 tools/build-all.sh
+NPU_HUB_BUILD_JOBS=2 NPU_HUB_BUILD_ALL_PLATFORMS=1 tools/build-all.sh
 ```
+
+This path is not selected by default on Radxa ARM64 boards, where the platform
+uses Qualcomm QAIRT. Orange Pi ARM64 boards still select Rocket. Detection uses
+the device-tree model; `NPU_HUB_BOARD` can override it. To force a multi-platform build, set
+`NPU_HUB_BUILD_ALL_PLATFORMS=1`; this also builds Rocket.
 
 The script uses or creates:
 
@@ -149,14 +154,16 @@ Here too, the post-build step copies to `native/build`; packaging and runtime de
 
 ### Qualcomm
 
-`workers/qualcomm` does not exist yet. `native/qualcomm` is a stub. Adding the real backend requires at least:
+There is no separate `workers/qualcomm` CMake tree. The Qualcomm adapter loads
+`libGenie.so` directly through JNI and uses the native Genie dialog callback;
+`genie-t2t-run` is only a reference tool. The QNN libraries are shipped in the
+QAIRT model directory.
+The model directory must contain at least:
 
-1. QAIRT/Genie C++ integration;
-2. real SDK probe;
-3. load/unload and streaming generation;
-4. dependent library management;
-5. CMake targets and JAR staging;
-6. hardware testing.
+1. a Genie dialog configuration such as `htp-model-config-llama32-1b-gqa.json`;
+2. `libGenie.so`;
+3. the QNN libraries;
+4. the serialized model weights.
 
 ## Rules for Modifying JNI
 

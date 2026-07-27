@@ -16,14 +16,37 @@ build_openvino_jni=false
 build_qualcomm_jni=false
 build_ryzenai_jni=false
 
+# ARM alone is not enough to select the NPU backend: Orange Pi uses Rocket,
+# while Radxa boards use Qualcomm QAIRT. Allow an explicit override for hosts
+# whose device tree does not expose a useful model string.
+board_model="${NPU_HUB_BOARD:-}"
+if [[ -z "${board_model}" ]]; then
+    for model_file in /proc/device-tree/model /sys/firmware/devicetree/base/model; do
+        if [[ -r "${model_file}" ]]; then
+            board_model="$(tr -d '\0' < "${model_file}")"
+            break
+        fi
+    done
+fi
+board_model="${board_model,,}"
+
+log() {
+    printf '[build-all] %s\n' "$*"
+}
+
 case "${host_arch}" in
     x86_64|amd64)
         build_openvino_jni=true
         build_ryzenai_jni=true
         ;;
     aarch64|arm64)
-        build_rocket_runtime=true
-        build_qualcomm_jni=true
+        if [[ "${board_model}" == *radxa* || "${board_model}" == *qualcomm* ]]; then
+            build_qualcomm_jni=true
+            log "Detected Radxa/Qualcomm board (${board_model}); Rocket disabled"
+        else
+            build_rocket_runtime=true
+            log "Detected non-Radxa ARM64 board (${board_model:-unknown}); enabling Rocket"
+        fi
         ;;
     *)
         build_rocket_runtime=true
@@ -39,10 +62,6 @@ if [[ "${NPU_HUB_BUILD_ALL_PLATFORMS:-0}" == "1" ]]; then
     build_qualcomm_jni=true
     build_ryzenai_jni=true
 fi
-
-log() {
-    printf '[build-all] %s\n' "$*"
-}
 
 require_command() {
     if ! command -v "$1" >/dev/null 2>&1; then
@@ -120,6 +139,16 @@ copy_runtime_library() {
 require_command git
 require_command cmake
 require_command java
+
+# CMake's FindJNI needs the JDK root, while many distributions expose only
+# `java` on PATH. Derive JAVA_HOME when the caller has not set it explicitly.
+if [[ -z "${JAVA_HOME:-}" ]]; then
+    java_executable="$(readlink -f "$(command -v java)")"
+    if [[ "${java_executable}" == */bin/java ]]; then
+        export JAVA_HOME="${java_executable%/bin/java}"
+        log "Derived JAVA_HOME=${JAVA_HOME} for JNI discovery"
+    fi
+fi
 
 if [[ "${build_rocket_runtime}" == true ]]; then
     log "Updating llama.cpp to latest origin/master"

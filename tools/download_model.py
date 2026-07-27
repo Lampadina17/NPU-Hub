@@ -78,7 +78,9 @@ def download_huggingface(repo_id, target_dir, quantization=None):
 def download_modelscope(repo_id, target_dir, quantization=None):
     print(f"Fetching ModelScope model metadata for {repo_id}...", flush=True)
     full_repo = repo_id if "/" in repo_id else f"radxa/{repo_id}"
-    api_url = f"https://www.modelscope.cn/api/v1/models/{full_repo}/repo/files"
+    # Without Recursive=true ModelScope returns only the repository's top-level
+    # entries, which can omit the large weight files stored below subdirectories.
+    api_url = f"https://www.modelscope.cn/api/v1/models/{full_repo}/repo/files?Revision=master&Recursive=true"
     req = urllib.request.Request(api_url, headers={'User-Agent': 'Mozilla/5.0'})
     with urllib.request.urlopen(req) as resp:
         data = json.loads(resp.read().decode())

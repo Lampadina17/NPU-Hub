@@ -187,7 +187,7 @@ The project must not be exposed directly to the Internet in its current state.
 | Start API | Changes process-local flag |
 | Stop API | Blocks four routes, does not free model |
 | Build worker | Updates/clones sources, applies patch, and compiles |
-| Setup ModelScope | Executes `python3 -m pip install modelscope` |
+| Setup ModelScope | Creates/reuses `.modelscope-venv` and installs ModelScope there |
 | Setup Intel | Download, `pkexec`, packages, udev, user group |
 
 Progress, logs, and flags are lost on every restart.

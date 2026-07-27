@@ -31,15 +31,17 @@ Technical documentation is divided by responsibility:
 
 | Backend | Real Implementation | Standard Build `tools/build-all.sh` |
 | --- | --- | --- |
-| Rockchip RK3588/RK3588S | Yes, `llama.cpp` + `ggml-rocket` in `workers/rocket` | Included and packaged in the JAR |
+| Rockchip RK3588/RK3588S | Yes, `llama.cpp` + `ggml-rocket` in `workers/rocket` | Included when explicitly targeted |
 | Intel OpenVINO GenAI | Present in `workers/openvino`, requires external SDK | Not included; generic stub is packaged |
 | AMD Ryzen AI | Present in `workers/ryzenai`, requires external SDK | Not included; generic stub is packaged |
-| Qualcomm QAIRT/Genie | Not yet integrated with real SDK | Generic stub only |
+| Qualcomm QAIRT/Genie | Direct JNI binding to `libGenie.so` and QNN libraries bundled with the model | Included on Radxa ARM64 |
 
-Files under `native/` are compatibility adapters that simulate probing,
-loading, and generation. They do not demonstrate that inference is happening on an NPU. For
+Most files under `native/` are compatibility adapters that simulate probing,
+loading, and generation. The Qualcomm adapter is the exception: it loads the
+model's native Genie/QNN libraries. For
 OpenVINO and Ryzen AI, the real implementations are located under `workers/`.
-For Qualcomm, a real worker is not yet available.
+For Qualcomm, the JNI adapter loads `libGenie.so` directly from each QAIRT model
+directory and uses the native Genie dialog callback for token streaming.
 
 This distinction is important: a properly loaded `.so` library is not,
 by itself, proof of hardware acceleration.
@@ -77,7 +79,7 @@ mvn spring-boot:run
 The control panel will be available at `http://localhost:11434`. Without a supported NPU
 and a real native library, you can inspect the interface, but real inference cannot be executed.
 
-### Full Rockchip Build
+### Platform Build
 
 The full build also requires Git, CMake, a C/C++ compiler, JNI headers, and network access:
 
@@ -86,7 +88,14 @@ tools/build-all.sh
 java -jar target/npu-hub-1.0.0-SNAPSHOT.jar
 ```
 
-The script:
+On Radxa ARM64 boards, the script builds the Qualcomm/QAIRT adapter and does
+not download or compile Rocket. Orange Pi ARM64 boards continue to use Rocket;
+the selection is based on the device-tree model. `NPU_HUB_BOARD` can override
+that model detection when needed. On x86, it builds the host-oriented generic
+adapters. The Rocket runtime is also built when all platforms are requested
+explicitly with `NPU_HUB_BUILD_ALL_PLATFORMS=1`.
+
+When Rocket is selected, the script:
 
 1. updates `llama.cpp` to `origin/master`;
 2. applies the Rocket patch;

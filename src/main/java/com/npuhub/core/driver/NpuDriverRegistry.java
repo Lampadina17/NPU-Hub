@@ -2,6 +2,7 @@ package com.npuhub.core.driver;
 
 import com.npuhub.core.model.BackendType;
 import com.npuhub.core.model.HardwareInfo;
+import com.npuhub.core.PlatformDetection;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -86,6 +87,14 @@ public class NpuDriverRegistry {
         }
 
         if (armLike) {
+            if (PlatformDetection.isRadxaBoard()) {
+                return List.of(
+                        BackendType.QUALCOMM,
+                        BackendType.ROCKCHIP,
+                        BackendType.RYZENAI,
+                        BackendType.OPENVINO
+                );
+            }
             return List.of(
                     BackendType.ROCKCHIP,
                     BackendType.QUALCOMM,
