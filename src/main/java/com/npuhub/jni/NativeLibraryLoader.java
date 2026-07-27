@@ -3,8 +3,10 @@ package com.npuhub.jni;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.BufferedReader;
 import java.io.File;
 import java.io.InputStream;
+import java.io.InputStreamReader;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
@@ -67,7 +69,6 @@ public class NativeLibraryLoader {
                 "libggml-base.so.0",
                 "libggml.so.0",
                 "libllama.so.0",
-                "libggml-cpu.so",
                 "libggml-rocket.so",
                 mappedJniName
         );
@@ -83,6 +84,33 @@ public class NativeLibraryLoader {
                     Path output = runtimeDirectory.resolve(fileName);
                     Files.copy(input, output, StandardCopyOption.REPLACE_EXISTING);
                     output.toFile().deleteOnExit();
+                }
+            }
+
+            // GGML_CPU_ALL_VARIANTS builds dispatchable CPU plugins with
+            // names such as libggml-cpu-armv8.2_1.so. They are staged as
+            // individual resources; extract all of them beside the runtime.
+            try (InputStream manifest = NativeLibraryLoader.class.getResourceAsStream(
+                    "/native/rocket/ggml-cpu-variants.list")) {
+                if (manifest == null) {
+                    return false;
+                }
+                try (BufferedReader reader = new BufferedReader(new InputStreamReader(manifest))) {
+                    String fileName;
+                    while ((fileName = reader.readLine()) != null) {
+                        if (fileName.isBlank()) {
+                            continue;
+                        }
+                        try (InputStream input = NativeLibraryLoader.class.getResourceAsStream(
+                                "/native/rocket/" + fileName)) {
+                            if (input == null) {
+                                return false;
+                            }
+                            Path output = runtimeDirectory.resolve(fileName);
+                            Files.copy(input, output, StandardCopyOption.REPLACE_EXISTING);
+                            output.toFile().deleteOnExit();
+                        }
+                    }
                 }
             }
 

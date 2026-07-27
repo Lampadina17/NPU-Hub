@@ -193,7 +193,28 @@ if [[ "${build_rocket_runtime}" == true ]]; then
     copy_runtime_library "${rocket_build_dir}/bin/libggml-base.so.0" "${native_resource_dir}/rocket/libggml-base.so.0"
     copy_runtime_library "${rocket_build_dir}/bin/libggml.so.0" "${native_resource_dir}/rocket/libggml.so.0"
     copy_runtime_library "${rocket_build_dir}/bin/libllama.so.0" "${native_resource_dir}/rocket/libllama.so.0"
-    copy_runtime_library "${rocket_build_dir}/bin/libggml-cpu.so" "${native_resource_dir}/rocket/libggml-cpu.so"
+    # With GGML_CPU_ALL_VARIANTS=ON llama.cpp emits dispatchable CPU plugins
+    # named libggml-cpu-<arch>_<variant>.so rather than a legacy
+    # libggml-cpu.so. Bundle every variant; the backend loader selects the
+    # compatible one at runtime.
+    rocket_cpu_lib_found=false
+    cpu_variant_manifest="${native_resource_dir}/rocket/ggml-cpu-variants.list"
+    : > "${cpu_variant_manifest}"
+    for cpu_lib in "${rocket_build_dir}"/bin/libggml-cpu-*.so; do
+        if [[ -f "${cpu_lib}" ]]; then
+            cpu_lib_name="$(basename -- "${cpu_lib}")"
+            copy_runtime_library \
+                "${cpu_lib}" \
+                "${native_resource_dir}/rocket/${cpu_lib_name}"
+            printf '%s\n' "${cpu_lib_name}" >> "${cpu_variant_manifest}"
+            rocket_cpu_lib_found=true
+        fi
+    done
+    if [[ "${rocket_cpu_lib_found}" != true ]]; then
+        printf '[build-all] no dispatchable ggml CPU libraries found in: %s\n' \
+            "${rocket_build_dir}/bin" >&2
+        exit 1
+    fi
     copy_runtime_library "${rocket_build_dir}/bin/libggml-rocket.so" "${native_resource_dir}/rocket/libggml-rocket.so"
     copy_runtime_library "${rocket_build_dir}/bin/libnpu_rockchip_jni.so" "${native_resource_dir}/rocket/libnpu_rockchip_jni.so"
 fi

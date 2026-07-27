@@ -486,7 +486,20 @@ static void load_ggml_backends() {
 
             fs::path selected_backend_directory;
             for (const fs::path& directory : backend_directories) {
-                if (path_is_regular_file(directory / "libggml-cpu.so")) {
+                bool has_cpu_plugin = path_is_regular_file(directory / "libggml-cpu.so");
+                if (!has_cpu_plugin) {
+                    std::error_code scan_error;
+                    for (const auto& entry : fs::directory_iterator(directory, scan_error)) {
+                        const std::string name = entry.path().filename().string();
+                        if (entry.is_regular_file() &&
+                            name.rfind("libggml-cpu-", 0) == 0 &&
+                            entry.path().extension() == ".so") {
+                            has_cpu_plugin = true;
+                            break;
+                        }
+                    }
+                }
+                if (has_cpu_plugin) {
                     selected_backend_directory = directory;
                     ggml_backend_load_all_from_path(directory.string().c_str());
                     break;
