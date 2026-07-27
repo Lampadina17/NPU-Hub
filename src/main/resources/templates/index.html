@@ -442,7 +442,8 @@
 
                     <div class="models-grid">
                         <article th:each="m : ${entry.value}" th:classappend="${m.loaded} ? 'active-model'"
-                                 class="model-card" th:attr="data-model-id=${m.id},data-backend=${m.compatibleBackend},data-downloaded=${m.downloaded}">
+                                 class="model-card"
+                                 th:attr="data-model-id=${m.id},data-backend=${m.compatibleBackend},data-downloaded=${m.downloaded}">
                             <div class="model-card-header">
                                 <div class="model-icon" aria-hidden="true">
                                     <span></span><span></span><span></span><span></span>
@@ -646,7 +647,7 @@
                         <div class="chat-composer-footer">
                             <span><kbd>Enter</kbd> send · <kbd>Shift</kbd> + <kbd>Enter</kbd> new line</span>
                             <div>
-                                                                <button class="btn btn-primary chat-send-btn" id="chat-send" type="submit">
+                                <button class="btn btn-primary chat-send-btn" id="chat-send" type="submit">
                                     <span>Send to NPU</span>
                                     <svg viewBox="0 0 24 24" width="15" height="15" stroke="currentColor"
                                          stroke-width="2" fill="none" aria-hidden="true">

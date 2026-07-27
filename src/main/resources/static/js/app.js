@@ -25,7 +25,9 @@ document.addEventListener('DOMContentLoaded', () => {
     window.addEventListener("unhandledrejection", event => {
         reportClientError(event.reason, "unhandled promise rejection");
     });
-    document.querySelectorAll(".ollama-endpoint").forEach(element => { element.textContent = window.location.origin; });
+    document.querySelectorAll(".ollama-endpoint").forEach(element => {
+        element.textContent = window.location.origin;
+    });
     initChat();
     const requestedTab = window.location.hash.slice(1);
     if (['dashboard', 'models', 'chat', 'settings'].includes(requestedTab)) {
@@ -1354,7 +1356,7 @@ async function refreshRockchipQuantizationCard(card) {
     }
 }
 
- function setModelOperationProgress(card, operation) {
+function setModelOperationProgress(card, operation) {
     if (!card) return;
     const section = card.querySelector(".progress-section");
     const bar = section?.querySelector(".progress-bar-fill");
@@ -1366,7 +1368,9 @@ async function refreshRockchipQuantizationCard(card) {
     if (active) {
         if (bar) bar.style.width = "35%";
         if (text) text.textContent = operation === "load" ? "Loading model on NPU…" : "Unloading model from NPU…";
-        card.querySelectorAll(".model-actions button").forEach(button => { button.disabled = true; });
+        card.querySelectorAll(".model-actions button").forEach(button => {
+            button.disabled = true;
+        });
     } else {
         if (bar) bar.style.width = "0";
         if (text) text.textContent = "0.0% completed";
@@ -1378,8 +1382,8 @@ async function downloadFromSource(modelId, quantization = null) {
         toggleTerminalDrawer(true);
         const resp = await fetch("/api/v1/control/models/download", {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ modelId, quantization })
+            headers: {"Content-Type": "application/json"},
+            body: JSON.stringify({modelId, quantization})
         });
         const data = await resp.json();
         if (!resp.ok) throw new Error(data.error || "Unable to start model download");
@@ -1406,8 +1410,8 @@ async function deleteModel(modelId, quantization = null) {
     try {
         const resp = await fetch("/api/v1/control/models/delete", {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ modelId, quantization })
+            headers: {"Content-Type": "application/json"},
+            body: JSON.stringify({modelId, quantization})
         });
         const data = await resp.json();
         if (resp.ok) {
